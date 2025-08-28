@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from random import randint
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                               QScrollArea, QFrame, QComboBox, QDialog, QMessageBox, QSystemTrayIcon, QMenu, QProgressBar,
-                              QStackedWidget, QTextEdit, QGraphicsView, QGraphicsScene)
+                              QStackedWidget, QTextEdit, QGraphicsView, QGraphicsScene,QSizePolicy)
 from PySide6.QtGui import QImage, QPixmap, QIcon, QAction, QCursor
 from PySide6.QtCore import Qt, QTimer, QUrl, QSize, Signal, QPropertyAnimation, QEasingCurve, QPoint
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -59,7 +59,7 @@ class StudentApp(QMainWindow):
         """)
         self.employee_id = None
         self.employee_email = None
-        self.server_url = "http://192.168.56.1:5000"
+        self.server_url = "http://67.215.229.213:5000/"
         self.ip = self.get_ip()
         self.device_type = self.get_device_type()
         self.hostname = self.get_hostname()
@@ -88,7 +88,6 @@ class StudentApp(QMainWindow):
         self.stop_button = None
         self.countdown_seconds = 60
         self.viewed_durations = {}
-        self.fetch_views()
         self.view_start_time = None
         self.countdown_remaining = self.countdown_seconds
         self.countdown_active = False
@@ -106,20 +105,6 @@ class StudentApp(QMainWindow):
             ip = 'unknown'
         logging.debug(f"Detected IP: {ip}")
         return ip
-
-    def fetch_views(self):
-        """Fetch view data from server to populate viewed_durations."""
-        try:
-            logging.debug(f"Fetching views for employee_id: {self.employee_id}")
-            response = requests.get(f"{self.server_url}/views/{self.employee_id}", timeout=5)
-            response.raise_for_status()
-            views = response.json().get('views', [])
-            for view in views:
-                self.viewed_durations[view['content_id']] = view['viewed_duration']
-            logging.debug(f"Fetched views: {self.viewed_durations}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error fetching views: {str(e)}")
-            QMessageBox.warning(self, "Warning", f"Failed to fetch view data: {str(e)}")
 
     def get_device_type(self):
         system = platform.system()
@@ -228,7 +213,7 @@ class StudentApp(QMainWindow):
         self.title_label.setStyleSheet("color: #333333; font-size: 18px; font-weight: bold;")
         main_content_layout.addWidget(self.title_label)
 
-        self.message_display = QTextEdit("No messages selected")
+        self.message_display = QTextEdit("")
         self.message_display.setReadOnly(True)
         self.message_display.setMinimumSize(300, 50)
         self.message_display.setStyleSheet("font-size: 14px; border: none; background-color: #ece4f7; color: #333333;")
@@ -494,9 +479,6 @@ class StudentApp(QMainWindow):
                 self.notifications = data.get('notifications', [])
                 new_content = data.get('content', [])
 
-                # Fetch updated view data
-                self.fetch_views()
-                
                 current_ids = {c['id'] for c in self.all_content}
                 new_messages = [c for c in new_content if c['id'] not in current_ids]
                 logging.debug(f"New messages detected: {[c['id'] for c in new_messages]}")
@@ -595,7 +577,7 @@ class StudentApp(QMainWindow):
 
     def show_content(self):
         if not self.all_content:
-            self.message_display.setText("No messages selected")
+            self.message_display.setText("")
             self.loading_bar.setVisible(False)
             logging.debug(f"No content to display for {self.employee_id}")
             return
@@ -604,11 +586,8 @@ class StudentApp(QMainWindow):
 
         self.title_label.setText(content.get('title', 'No Title'))
 
-        # Track view start time for duration calculation
         self.view_start_time = datetime.now()
-        # Initialize duration if not already set
-        if content['id'] not in self.viewed_durations:
-            self.viewed_durations[content['id']] = 0
+        self.viewed_durations[content['id']] = 0
 
         for widget in self.media_frame.findChildren(QWidget):
             widget.deleteLater()
@@ -631,26 +610,25 @@ class StudentApp(QMainWindow):
 
         self.start_countdown()
 
+        # Always display the message on the left
+        self.message_display.setText(content['text'])
+        self.message_display.setVisible(True)
+
         has_media = content.get('image_url') or (content['type'] == 'video' and content.get('url')) or content['type'] == 'both'
 
         if has_media:
+            main_widget = QWidget()
+            main_layout = QVBoxLayout(main_widget)
+            main_layout.setContentsMargins(0, 0, 0, 0)
+            main_layout.setSpacing(10)
+
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(10)
+
             if content['type'] == 'both' and content.get('url') and content.get('image_url'):
-                for widget in self.media_frame.findChildren(QWidget):
-                    widget.deleteLater()
-
-                main_widget = QWidget()
-                main_layout = QVBoxLayout(main_widget)
-                main_layout.setContentsMargins(0, 0, 0, 0)
-                main_layout.setSpacing(10)
-
-                self.message_display.setText(content['text'])
-                main_layout.addWidget(self.message_display)
-
-                row_widget = QWidget()
-                row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(0, 0, 0, 0)
-                row_layout.setSpacing(10)
-
+                # Video section
                 video_frame = QFrame()
                 video_layout = QVBoxLayout(video_frame)
                 try:
@@ -681,8 +659,11 @@ class StudentApp(QMainWindow):
                     logging.error(f"Error loading video for both: {str(e)}")
                 row_layout.addWidget(video_frame)
 
+                # Image section (responsive)
                 image_container = QWidget()
                 image_layout = QVBoxLayout(image_container)
+                image_layout.setContentsMargins(0, 0, 0, 0)
+                image_layout.setSpacing(0)
                 try:
                     response = requests.get(content['image_url'], timeout=5)
                     response.raise_for_status()
@@ -696,138 +677,123 @@ class StudentApp(QMainWindow):
                     self.graphics_view = QGraphicsView(image_container)
                     self.graphics_view.setScene(self.scene)
                     self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
-                    self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorViewCenter)
-                    self.graphics_view.setResizeAnchor(QGraphicsView.AnchorViewCenter)  # Ensure centering on resize
-                    self.graphics_view.setAlignment(Qt.AlignCenter)  # Center the scene
-                    self.graphics_view.setFixedSize(150, 100)
-                    self.graphics_view.setSceneRect(0, 0, image.width(), image.height())  # Set scene rect to image size
-                    self.center_image()  # Center the image initially
+                    self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+                    self.graphics_view.setAlignment(Qt.AlignCenter)
+                    self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
                     image_layout.addWidget(self.graphics_view)
 
-# Add zoom buttons
-                    button_frame = QFrame()
-                    button_layout = QHBoxLayout(button_frame)
-                    zoom_in_btn = QPushButton("+")
+                    zoom_frame = QFrame()
+                    zoom_layout = QHBoxLayout(zoom_frame)
+                    zoom_layout.setContentsMargins(0, 0, 0, 0)
+                    zoom_layout.setSpacing(5)
+
+                    zoom_in_btn = QPushButton("+", image_container)
                     zoom_in_btn.setFixedSize(30, 30)
                     zoom_in_btn.clicked.connect(self.zoom_in_image)
                     zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
                     zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
-                    button_layout.addWidget(zoom_in_btn)
+                    zoom_layout.addWidget(zoom_in_btn)
 
-                    zoom_out_btn = QPushButton("-")
+                    zoom_out_btn = QPushButton("-", image_container)
                     zoom_out_btn.setFixedSize(30, 30)
                     zoom_out_btn.clicked.connect(self.zoom_out_image)
                     zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
                     zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
-                    button_layout.addWidget(zoom_out_btn)
-                    image_layout.addWidget(button_frame)
+                    zoom_layout.addWidget(zoom_out_btn)
 
-                    logging.debug(f"Image loaded for both")
+                    zoom_frame.setLayout(zoom_layout)
+                    image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
+
+                    row_layout.addWidget(image_container)
+                    logging.debug(f"Image loaded and set as responsive for both")
                 except Exception as e:
                     logging.error(f"Error loading image for both: {str(e)}")
-                row_layout.addWidget(image_container)
+            elif content['type'] == 'video' and content.get('url'):
+                video_frame = QFrame()
+                video_layout = QVBoxLayout(video_frame)
+                try:
+                    self.media_player = QMediaPlayer()
+                    self.audio_output = QAudioOutput()
+                    self.media_player.setAudioOutput(self.audio_output)
+                    self.media_player.setSource(QUrl(content['url']))
+                    self.video_widget = QVideoWidget()
+                    self.video_widget.setMinimumSize(300, 200)
+                    self.media_player.setVideoOutput(self.video_widget)
+                    video_layout.addWidget(self.video_widget)
 
-                main_layout.addWidget(row_widget)
-                self.media_frame.layout().addWidget(main_widget)
-            else:
-                row_widget = QWidget()
-                row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(0, 0, 0, 0)
-                row_layout.setSpacing(10)
+                    video_button_frame = QFrame()
+                    video_button_layout = QHBoxLayout(video_button_frame)
+                    self.audio_output.setMuted(True)
+                    unmute_button = QPushButton("Unmute")
+                    unmute_button.clicked.connect(self.toggle_mute)
+                    unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
+                    unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
+                    video_button_layout.addWidget(unmute_button)
+                    video_button_layout.addWidget(self.play_again_button)
+                    video_layout.addWidget(video_button_frame)
 
-                text_edit = QTextEdit(content['text'])
-                text_edit.setReadOnly(True)
-                text_edit.setStyleSheet("font-size: 14px; border: none; background-color: #ece4f7; color: #333333;")
-                row_layout.addWidget(text_edit, 1)
+                    self.video_widget.setVisible(True)
+                    self.media_player.play()
+                    self.media_player.mediaStatusChanged.connect(self.handle_media_status)
+                    logging.debug(f"Video playing")
+                except Exception as e:
+                    logging.error(f"Error loading video: {str(e)}")
+                row_layout.addWidget(video_frame)
+            elif content.get('image_url'):
+                image_container = QWidget()
+                image_layout = QVBoxLayout(image_container)
+                image_layout.setContentsMargins(0, 0, 0, 0)
+                image_layout.setSpacing(0)
+                try:
+                    response = requests.get(content['image_url'], timeout=5)
+                    response.raise_for_status()
+                    image = QImage()
+                    image.loadFromData(response.content)
+                    if image.isNull():
+                        raise ValueError("Image is null or invalid")
 
-                media_right = QWidget()
-                media_right_layout = QVBoxLayout(media_right)
-                media_right_layout.setContentsMargins(0, 0, 0, 0)
+                    self.scene = QGraphicsScene()
+                    pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
+                    self.graphics_view = QGraphicsView(image_container)
+                    self.graphics_view.setScene(self.scene)
+                    self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
+                    self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+                    self.graphics_view.setAlignment(Qt.AlignCenter)
+                    self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-                if content['type'] == 'video' and content.get('url'):
-                    video_frame = QFrame()
-                    video_layout = QVBoxLayout(video_frame)
-                    try:
-                        self.media_player = QMediaPlayer()
-                        self.audio_output = QAudioOutput()
-                        self.media_player.setAudioOutput(self.audio_output)
-                        self.media_player.setSource(QUrl(content['url']))
-                        self.video_widget = QVideoWidget()
-                        self.video_widget.setMinimumSize(300, 200)
-                        self.media_player.setVideoOutput(self.video_widget)
-                        video_layout.addWidget(self.video_widget)
+                    image_layout.addWidget(self.graphics_view)
 
-                        video_button_frame = QFrame()
-                        video_button_layout = QHBoxLayout(video_button_frame)
-                        self.audio_output.setMuted(True)
-                        unmute_button = QPushButton("Unmute")
-                        unmute_button.clicked.connect(self.toggle_mute)
-                        unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
-                        unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
-                        video_button_layout.addWidget(unmute_button)
-                        video_button_layout.addWidget(self.play_again_button)
-                        video_layout.addWidget(video_button_frame)
+                    zoom_frame = QFrame()
+                    zoom_layout = QHBoxLayout(zoom_frame)
+                    zoom_layout.setContentsMargins(0, 0, 0, 0)
+                    zoom_layout.setSpacing(5)
 
-                        self.video_widget.setVisible(True)
-                        self.media_player.play()
-                        self.media_player.mediaStatusChanged.connect(self.handle_media_status)
-                        logging.debug(f"Video playing")
-                    except Exception as e:
-                        logging.error(f"Error loading video: {str(e)}")
-                    media_right_layout.addWidget(video_frame)
+                    zoom_in_btn = QPushButton("+", image_container)
+                    zoom_in_btn.setFixedSize(30, 30)
+                    zoom_in_btn.clicked.connect(self.zoom_in_image)
+                    zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
+                    zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
+                    zoom_layout.addWidget(zoom_in_btn)
 
-                if content.get('image_url'):
-                    image_container = QWidget()
-                    image_layout = QVBoxLayout(image_container)
-                    try:
-                        response = requests.get(content['image_url'], timeout=5)
-                        response.raise_for_status()
-                        image = QImage()
-                        image.loadFromData(response.content)
-                        if image.isNull():
-                            raise ValueError("Image is null or invalid")
+                    zoom_out_btn = QPushButton("-", image_container)
+                    zoom_out_btn.setFixedSize(30, 30)
+                    zoom_out_btn.clicked.connect(self.zoom_out_image)
+                    zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
+                    zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
+                    zoom_layout.addWidget(zoom_out_btn)
 
-                        self.scene = QGraphicsScene()
-                        pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
-                        self.graphics_view = QGraphicsView(image_container)
-                        self.graphics_view.setScene(self.scene)
-                        self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
-                        self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorViewCenter)
-                        self.graphics_view.setResizeAnchor(QGraphicsView.AnchorViewCenter)  # Ensure centering on resize
-                        self.graphics_view.setAlignment(Qt.AlignCenter)  # Center the scene
-                        self.graphics_view.setFixedSize(300, 250)
-                        self.graphics_view.setSceneRect(0, 0, image.width(), image.height())  # Set scene rect to image size
-                        self.center_image()  # Center the image initially
-                        image_layout.addWidget(self.graphics_view)
+                    zoom_frame.setLayout(zoom_layout)
+                    image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
 
-                        # Add zoom buttons
-                        button_frame = QFrame()
-                        button_layout = QHBoxLayout(button_frame)
-                        zoom_in_btn = QPushButton("+")
-                        zoom_in_btn.setFixedSize(30, 30)
-                        zoom_in_btn.clicked.connect(self.zoom_in_image)
-                        zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
-                        zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
-                        button_layout.addWidget(zoom_in_btn)
+                    row_layout.addWidget(image_container)
+                    logging.debug(f"Image loaded and set as responsive")
+                except Exception as e:
+                    logging.error(f"Error loading image: {str(e)}")
 
-                        zoom_out_btn = QPushButton("-")
-                        zoom_out_btn.setFixedSize(30, 30)
-                        zoom_out_btn.clicked.connect(self.zoom_out_image)
-                        zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
-                        zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
-                        button_layout.addWidget(zoom_out_btn)
-                        image_layout.addWidget(button_frame)
-
-                        logging.debug(f"Image loaded")
-                    except Exception as e:
-                        logging.error(f"Error loading image: {str(e)}")
-                    media_right_layout.addWidget(image_container)
-
-                row_layout.addWidget(media_right, 2)
-                self.media_frame.layout().addWidget(row_widget)
-        else:
-            self.message_display.setText(content['text'])
-            self.message_display.setVisible(True)
+            row_layout.addStretch()  # Push media to the right if no image/video
+            main_layout.addWidget(row_widget)
+            self.media_frame.layout().addWidget(main_widget)
 
         QTimer.singleShot(30000, lambda: self.record_view(content['id']))
         self.loading_bar.setVisible(False)
@@ -837,25 +803,18 @@ class StudentApp(QMainWindow):
         self.update_scroll_area()
         logging.debug(f"Content displayed, window visible: {self.isVisible()}, geometry: {self.geometry()}")
 
-    def center_image(self):
-        """Center the image in the QGraphicsView."""
-        if self.graphics_view and self.scene:
-            self.graphics_view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-            self.graphics_view.centerOn(self.scene.sceneRect().center())
-            logging.debug("Image centered in QGraphicsView")
-
     def zoom_in_image(self):
         if self.graphics_view:
             factor = 1.25
             self.graphics_view.scale(factor, factor)
-            self.center_image()  # Re-center after zooming
+            self.graphics_view.centerOn(self.scene.sceneRect().center())
             logging.debug("Image zoomed in")
 
     def zoom_out_image(self):
         if self.graphics_view:
             factor = 0.8
             self.graphics_view.scale(factor, factor)
-            self.center_image()  # Re-center after zooming
+            self.graphics_view.centerOn(self.scene.sceneRect().center())
             logging.debug("Image zoomed out")
 
     def handle_media_status(self, status):
@@ -923,7 +882,6 @@ class StudentApp(QMainWindow):
             viewed_duration = self.viewed_durations.get(content['id'], 0)
             status_icon = '✔' if viewed_duration > 30 else '⏳'
             status_color = '#28a745' if viewed_duration > 30 else '#ffc107'
-            logging.debug(f"Content {content['id']}: viewed_duration={viewed_duration}, status_icon={status_icon}")
 
             label_text = '<br>'.join(title_lines)
             label_text += f"<br><span style='font-size: 10px; color: #666666;'>{formatted_time} <span style='color: {status_color};'>{status_icon}</span></span>"
@@ -957,28 +915,22 @@ class StudentApp(QMainWindow):
             logging.error(f"Error toggling mute: {str(e)}")
 
     def record_view(self, content_id):
-        # Update viewed duration before sending to server
-        if self.view_start_time and content_id in self.viewed_durations:
-            duration = (datetime.now() - self.view_start_time).total_seconds()
-            self.viewed_durations[content_id] = max(self.viewed_durations[content_id], duration)
-            logging.debug(f"Recording view for content {content_id} with duration {self.viewed_durations[content_id]} seconds")
         try:
+            logging.debug(f"Attempting to record view for content_id {content_id}")
             response = requests.post(
                 f"{self.server_url}/record_view",
                 json={
                     "content_id": content_id,
-                    "employee_id": self.employee_id,
-                    "viewed_duration": self.viewed_durations.get(content_id, 0)
+                    "employee_id": self.employee_id
                 },
                 timeout=5,
                 allow_redirects=True
             )
+            logging.debug(f"record_view response: status={response.status_code}, text={response.text}")
             response.raise_for_status()
             logging.info(f"View recorded successfully for content_id {content_id}")
-            self.update_scroll_area()  # Update UI to reflect new duration
         except requests.exceptions.RequestException as e:
             logging.error(f"Error recording view for content_id {content_id}: {str(e)}")
-            QMessageBox.warning(self, "Warning", f"Failed to record view: {str(e)}")
 
     def start_reaction_animation(self, emoji):
         if emoji not in self.emoji_map:
