@@ -25,9 +25,10 @@ SUPABASE_URL = "https://eyacavjtueadozwvdbil.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5YWNhdmp0dWVhZG96d3ZkYmlsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTA1NDAxMCwiZXhwIjoyMDcwNjMwMDEwfQ._OKdFIiHokOHcF741rHuj8VcWCYCk0SNyBmZsa0WO6Q"
 
 # Cortex XDR API configuration
-CORTEX_API_URL = os.getenv("CORTEX_API_URL", " https://api-acorntravels.xdr.sg.paloaltonetworks.com")
-CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID", "2")  # Replace with your Cortex XDR API Key ID
-CORTEX_API_KEY = os.getenv("CORTEX_API_KEY", "pmNRC0RrVfYxOymeaui0HdNwzfrFRYZo9292eICkO8hJiWU7H1l67bSwmVllD2TWh3rA0hCqvRxQiNZvqDcj8BTkx5muveTrvQhZbv1vGaNHDLwFjpW5aKNEoY")  # Replace with your Cortex XDR API Key
+CORTEX_API_URL = os.getenv("CORTEX_API_URL", "https://api-acorntravels.xdr.sg.paloaltonetworks.com/public_api/v1/endpoints/get_endpoint/")
+CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID", "3")  # Replace with your Cortex XDR API Key ID
+CORTEX_API_KEY = os.getenv("CORTEX_API_KEY", "wGnOGUN5NLCdmNWhJAFzkYVBoGXGNxLLt1N5LOFdr9xI6ZS9VzxIeqZSG1EO0x3MtqtEI51h4h4SbL6TcSKcOPL07YbR4zakiT3rwl8ytwboBSyJZI3nY5HYH5gJgvo7")  # Replace with your Cortex XDR API Key
+
 
 
 # Validate Supabase URL
@@ -447,31 +448,40 @@ def send_message_page():
 @login_required
 def cortex_logs():
     try:
-        # Prepare headers for Cortex XDR API request
         headers = {
             "x-xdr-auth-id": CORTEX_API_KEY_ID,
             "Authorization": CORTEX_API_KEY,
             "Content-Type": "application/json"
         }
 
-        # Make the API request to fetch endpoints
-        response = requests.post(CORTEX_API_URL, headers=headers, json={})
-        response.raise_for_status()  # Raise an exception for 4xx/5xx status codes
+        payload = {
+            "request_data": {
+                "filters": [],
+                "search_from": 0,
+                "search_to": 10,
+                "sort": {
+                    "field": "last_seen",
+                    "keyword": "desc"
+                }
+            }
+        }
 
-        # Parse the response
+        response = requests.post(CORTEX_API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+
         data = response.json()
         endpoints = data.get('reply', {}).get('endpoints', [])
 
-        # Process endpoint data to match the template
         processed_endpoints = []
         for endpoint in endpoints:
             processed_endpoints.append({
                 'hostname': endpoint.get('endpoint_name', 'N/A'),
-                'ip': endpoint.get('ip_address', []),  # List of IPs
+                'ip': endpoint.get('ip', []),   # Cortex returns "ip"
                 'os_type': endpoint.get('platform', 'N/A'),
                 'os_version': endpoint.get('os_version', 'N/A'),
                 'endpoint_status': endpoint.get('status', 'N/A'),
-                'last_seen': endpoint.get('last_seen', 'N/A')
+                'last_seen': endpoint.get('last_seen', 'N/A'),
+                'email': endpoint.get('email', 'N/A')
             })
 
         logging.info(f"Fetched {len(processed_endpoints)} endpoints from Cortex XDR API")
@@ -489,53 +499,61 @@ def cortex_logs():
 @login_required
 def monitor_devices():
     try:
-        # Fetch all devices from the employee_devices table
-        devices_response = supabase.table('employee_devices').select('employee_id, status, active_status, ip, device_type, hostname, email, last_seen, app_running').execute()
+        # Fetch devices from Supabase
+        devices_response = supabase.table('employee_devices') \
+            .select('employee_id, status, active_status, ip, device_type, hostname, email, last_seen, app_running') \
+            .execute()
         devices = devices_response.data or []
         logging.debug(f"Fetched {len(devices)} devices from Supabase: {devices}")
 
-        # Prepare headers for Cortex XDR API request
+        # Prepare headers for Cortex XDR API
         headers = {
             "x-xdr-auth-id": CORTEX_API_KEY_ID,
             "Authorization": CORTEX_API_KEY,
             "Content-Type": "application/json"
         }
 
-        # Fetch endpoint data from Cortex XDR API
+        # Payload for Cortex API
+        payload = {
+            "request_data": {
+                "filters": [],
+                "search_from": 0,
+                "search_to": 100,  # adjust as needed
+                "sort": {"field": "last_seen", "keyword": "desc"}
+            }
+        }
+
+        # Fetch endpoint data from Cortex XDR
         try:
-            cortex_response = requests.post(CORTEX_API_URL, headers=headers, json={})
+            cortex_response = requests.post(CORTEX_API_URL, headers=headers, json=payload)
             cortex_response.raise_for_status()
             cortex_data = cortex_response.json()
             cortex_endpoints = cortex_data.get('reply', {}).get('endpoints', [])
-            logging.debug(f"Fetched {len(cortex_endpoints)} endpoints from Cortex XDR API: {cortex_endpoints}")
+            logging.debug(f"Fetched {len(cortex_endpoints)} endpoints from Cortex XDR API")
         except requests.exceptions.RequestException as e:
             logging.error(f"Cortex XDR API request failed: {str(e)}")
             cortex_endpoints = []
             error_message = f"Cortex XDR API error: {str(e)}"
 
-        # Create lookup dictionaries for Cortex endpoints
+        # Create lookup maps
         cortex_hostname_map = {}
         cortex_email_map = {}
         for endpoint in cortex_endpoints:
-            hostname = endpoint.get('endpoint_name') or endpoint.get('hostname', '')
-            email = endpoint.get('email', '')
+            hostname = endpoint.get('endpoint_name', '').lower().strip()
+            email = endpoint.get('email', '').lower().strip()
             if hostname:
-                cortex_hostname_map[hostname.lower().strip()] = endpoint
+                cortex_hostname_map[hostname] = endpoint
             if email:
-                cortex_email_map[email.lower().strip()] = endpoint
+                cortex_email_map[email] = endpoint
         logging.debug(f"Cortex hostname map keys: {list(cortex_hostname_map.keys())}")
         logging.debug(f"Cortex email map keys: {list(cortex_email_map.keys())}")
 
-        # Process devices with verification status
+        # Process devices with verification
         processed_devices = []
         for device in devices:
             hostname = (device.get('hostname') or '').lower().strip()
             email = (device.get('email') or '').lower().strip()
 
-            # Log device data for debugging
-            logging.debug(f"Processing device: employee_id={device['employee_id']}, hostname={hostname}, email={email}")
-
-            # Check verification status
             is_hostname_valid = bool(hostname and hostname in cortex_hostname_map)
             is_email_valid = bool(email and email in cortex_email_map)
 
@@ -545,17 +563,17 @@ def monitor_devices():
                 'active_status': device['active_status'],
                 'ip': device.get('ip', 'N/A'),
                 'device_type': device.get('device_type', 'N/A'),
-                'hostname': device['hostname'] or 'N/A',
-                'email': device['email'] or 'N/A',
-                'last_seen': device['last_seen'] or 'N/A',
-                'app_running': device['app_running'],
+                'hostname': device.get('hostname', 'N/A'),
+                'email': device.get('email', 'N/A'),
+                'last_seen': device.get('last_seen', 'N/A'),
+                'app_running': device.get('app_running'),
                 'is_hostname_valid': is_hostname_valid,
                 'is_email_valid': is_email_valid
             })
 
-        # Split devices into active and inactive
-        active_devices = [device for device in processed_devices if device['active_status']]
-        inactive_devices = [device for device in processed_devices if not device['active_status']]
+        # Split devices
+        active_devices = [d for d in processed_devices if d['active_status']]
+        inactive_devices = [d for d in processed_devices if not d['active_status']]
         logging.info(f"Processed {len(active_devices)} active and {len(inactive_devices)} inactive devices")
 
         return render_template(
@@ -567,20 +585,10 @@ def monitor_devices():
 
     except APIError as e:
         logging.error(f"Supabase API error fetching devices: {str(e)}")
-        return render_template(
-            'monitor_devices.html',
-            active_devices=[],
-            inactive_devices=[],
-            error=f"Database error: {str(e)}"
-        )
+        return render_template('monitor_devices.html', active_devices=[], inactive_devices=[], error=f"Database error: {str(e)}")
     except Exception as e:
         logging.error(f"Unexpected error in monitor_devices route: {str(e)}")
-        return render_template(
-            'monitor_devices.html',
-            active_devices=[],
-            inactive_devices=[],
-            error=f"Unexpected error: {str(e)}"
-        )
+        return render_template('monitor_devices.html', active_devices=[], inactive_devices=[], error=f"Unexpected error: {str(e)}")
     
 @app.route('/send_message', methods=['POST'])
 @login_required
