@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+{% block title %}View Reactions - {{ content_id }}{% endblock %}
+{% block content %}
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        overflow-x: hidden;
+        background: #ece4f7;
+        font-family: Arial, sans-serif;
+    }
+    .navbar {
+        background-color: #b8a9d9;
+        padding: 10px;
+        position: fixed;
+        top: 0;
+        width: 100%;
+        z-index: 1000;
+    }
+    .content-container {
+        margin-top: 60px;
+        padding: 20px;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+    }
+    .content-header {
+        margin-bottom: 20px;
+    }
+    .content-header h2 {
+        margin: 0;
+        font-size: 24px;
+        color: #333;
+    }
+    .content-header p {
+        margin: 10px 0;
+        font-size: 16px;
+        color: #333;
+        text-align: center;
+    }
+    .content-body {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        margin: 20px 0;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+    .content-body p {
+        flex: 1;
+        min-width: 300px;
+        max-width: 500px;
+        text-align: left;
+        margin: 0;
+        font-size: 16px;
+        color: #333;
+    }
+    .media-container {
+        flex: 1;
+        min-width: 300px;
+        max-width: 400px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+    }
+    .media-container video, .media-container img {
+        max-width: 100%;
+        height: auto;
+    }
+    .media-both {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 20px;
+        flex-wrap: wrap;
+        width: 100%;
+        max-width: 900px;
+        margin: 20px auto;
+    }
+    .media-both video, .media-both img {
+        max-width: 400px;
+        height: auto;
+    }
+    .section {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin: 20px auto;
+        flex-wrap: wrap;
+        gap: 20px;
+        width: 80%;
+        max-width: 1200px;
+    }
+    .chart-container {
+        flex: 1;
+        min-width: 300px;
+        max-width: 500px;
+        position: relative;
+        z-index: 1;
+    }
+    .table-container {
+        flex: 1;
+        min-width: 300px;
+        max-width: 500px;
+    }
+    .reaction-table, .feedback-table {
+        width: 100%;
+        border-collapse: collapse;
+        background-color: #ffffff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .reaction-table th, .reaction-table td, .feedback-table th, .feedback-table td {
+        border: 1px solid #ddd;
+        padding: 12px;
+        text-align: left;
+    }
+    .reaction-table th, .feedback-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+    }
+    .reaction-table tr:nth-child(even), .feedback-table tr:nth-child(even) {
+        background-color: #f9f9f9;
+    }
+    .reaction-table tr:hover, .feedback-table tr:hover {
+        background-color: #f1f1f1;
+    }
+    .pagination {
+        margin-top: 10px;
+        text-align: center;
+    }
+    .pagination button {
+        padding: 8px 12px;
+        margin: 0 5px;
+        border: 1px solid #b8a9d9;
+        background-color: #ffffff;
+        cursor: pointer;
+    }
+    .pagination button:disabled {
+        background-color: #f2f2f2;
+        cursor: not-allowed;
+    }
+    .error-message {
+        color: red;
+        margin: 20px;
+    }
+    .snow-container {
+        position: absolute;
+        top: 60px;
+        left: 0;
+        width: 100%;
+        height: calc(100% - 60px);
+        pointer-events: none;
+        z-index: 0;
+    }
+    .snow-emoji {
+        position: absolute;
+        font-size: 24px;
+        user-select: none;
+        animation: snow-fall linear forwards;
+    }
+    @keyframes snow-fall {
+        0% {
+            transform: translateY(-100px) translateX(0);
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(calc(100vh - 60px)) translateX(calc(var(--drift) * 50px));
+            opacity: 0.5;
+        }
+    }
+</style>
+
+
+<div class="content-container">
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
+
+    <!-- Content Display -->
+    <div class="content-header">
+        <h2>{{ content_title }}</h2>
+        <p>{{ content_text }}</p>
+    </div>
+
+    {% if content_type == 'image' or content_type == 'video' %}
+    <div class="content-body">
+        <p>{{ content_text }}</p>
+        <div class="media-container">
+            {% if content_type == 'video' and video_url %}
+            <video width="400" controls>
+                <source src="{{ video_url }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            {% elif content_type == 'image' and image_url %}
+            <img src="{{ image_url }}" alt="Content Image" style="max-width: 400px; height: auto;">
+            {% endif %}
+        </div>
+    </div>
+    {% elif content_type == 'both' and video_url and image_url %}
+    <div class="media-both">
+        <video width="400" controls>
+            <source src="{{ video_url }}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <img src="{{ image_url }}" alt="Content Image" style="max-width: 400px; height: auto;">
+    </div>
+    {% endif %}
+
+    <!-- Section 1: Reactions Pie Chart and Table -->
+    <div class="section">
+        <div class="chart-container">
+            <h2>Reaction Statistics</h2>
+            <canvas id="reactionChart"></canvas>
+        </div>
+        <div class="table-container">
+            <h2>Reactions</h2>
+            {% if reaction_details %}
+            <table class="reaction-table" id="reactionTable">
+                <thead>
+                    <tr>
+                        <th>Employee Email</th>
+                        <th>Reaction</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody id="reactionTableBody"></tbody>
+            </table>
+            <div class="pagination" id="reactionPagination"></div>
+            {% else %}
+            <p>No reactions recorded.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Section 2: Feedback Table and Department Pie Chart -->
+    <div class="section">
+        <div class="table-container">
+            <h2>Feedback</h2>
+            {% if feedback_details %}
+            <table class="feedback-table">
+                <thead>
+                    <tr>
+                        <th>Employee Email</th>
+                        <th>Feedback</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for detail in feedback_details %}
+                    <tr>
+                        <td>{{ detail.employee_email }}</td>
+                        <td>{{ detail.feedback }}</td>
+                        <td>{{ detail.timestamp }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No feedback recorded.</p>
+            {% endif %}
+        </div>
+        <div class="chart-container">
+            <h2>Reactions by Department</h2>
+            <canvas id="departmentChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Snow Animation -->
+<div class="snow-container" id="snowContainer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // Emoji mapping for reactions
+    const emojiMap = {
+        'like': '👍',
+        'unlike': '👎',
+        'heart': '❤️',
+        'cry': '😢'
+    };
+
+    // Get most frequent reaction
+    function getMostFrequentReaction(reactionDetails) {
+        let reactions = [];
+        try {
+            reactions = typeof reactionDetails === 'string' ? JSON.parse(reactionDetails) : reactionDetails;
+            if (!Array.isArray(reactions) || reactions.length === 0) {
+                console.warn("No valid reaction details provided:", reactionDetails);
+                return null;
+            }
+        } catch (e) {
+            console.error("Error parsing reactionDetails:", e);
+            return null;
+        }
+
+        const reactionCount = {};
+        reactions.forEach(detail => {
+            reactionCount[detail.reaction] = (reactionCount[detail.reaction] || 0) + 1;
+        });
+
+        return Object.keys(reactionCount).reduce((a, b) => 
+            reactionCount[a] > reactionCount[b] ? a : b, null
+        );
+    }
+
+    // Paginate reactions table
+    function paginateReactions(reactions, page, perPage) {
+        const start = (page - 1) * perPage;
+        const end = start + perPage;
+        return reactions.slice(start, end);
+    }
+
+    // Render reactions table
+    function renderReactionTable(reactions, page, perPage) {
+        const tableBody = document.getElementById('reactionTableBody');
+        const paginationDiv = document.getElementById('reactionPagination');
+        tableBody.innerHTML = '';
+
+        const paginatedReactions = paginateReactions(reactions, page, perPage);
+        paginatedReactions.forEach(detail => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${detail.employee_email}</td>
+                <td>${detail.reaction}</td>
+                <td>${detail.timestamp}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+        // Pagination controls
+        const totalPages = Math.ceil(reactions.length / perPage);
+        paginationDiv.innerHTML = '';
+        if (totalPages > 1) {
+            const prevButton = document.createElement('button');
+            prevButton.textContent = 'Previous';
+            prevButton.disabled = page === 1;
+            prevButton.addEventListener('click', () => renderReactionTable(reactions, page - 1, perPage));
+            paginationDiv.appendChild(prevButton);
+
+            for (let i = 1; i <= totalPages; i++) {
+                const pageButton = document.createElement('button');
+                pageButton.textContent = i;
+                pageButton.disabled = i === page;
+                pageButton.addEventListener('click', () => renderReactionTable(reactions, i, perPage));
+                paginationDiv.appendChild(pageButton);
+            }
+
+            const nextButton = document.createElement('button');
+            nextButton.textContent = 'Next';
+            nextButton.disabled = page === totalPages;
+            nextButton.addEventListener('click', () => renderReactionTable(reactions, page + 1, perPage));
+            paginationDiv.appendChild(nextButton);
+        }
+    }
+
+    // Pie chart and snow animation
+    document.addEventListener("DOMContentLoaded", () => {
+        let reactionDetails = '{{ reaction_details | tojson | safe }}';
+        let feedbackDetails = '{{ feedback_details | tojson | safe }}';
+
+        // Parse JSON strings
+        try {
+            reactionDetails = typeof reactionDetails === 'string' ? JSON.parse(reactionDetails) : reactionDetails;
+            feedbackDetails = typeof feedbackDetails === 'string' ? JSON.parse(feedbackDetails) : feedbackDetails;
+        } catch (e) {
+            console.error("Error parsing JSON data:", e);
+            reactionDetails = [];
+            feedbackDetails = [];
+        }
+
+        // Reaction pie chart
+        const reactionCount = {};
+        if (Array.isArray(reactionDetails)) {
+            reactionDetails.forEach(detail => {
+                reactionCount[detail.reaction] = (reactionCount[detail.reaction] || 0) + 1;
+            });
+        } else {
+            console.warn("reactionDetails is not an array:", reactionDetails);
+        }
+
+        const reactionLabels = Object.keys(reactionCount).map(reaction => emojiMap[reaction] || reaction);
+        const reactionData = Object.values(reactionCount);
+
+        const reactionChartCtx = document.getElementById('reactionChart').getContext('2d');
+        new Chart(reactionChartCtx, {
+            type: 'pie',
+            data: {
+                labels: reactionLabels,
+                datasets: [{
+                    data: reactionData,
+                    backgroundColor: [
+                        '#ff6f61', // like
+                        '#a38cd5', // unlike
+                        '#e84a5f', // heart
+                        '#b8a9d9'  // cry
+                    ],
+                    borderColor: '#333333',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 14 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                return `${label}: ${value}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Department pie chart
+        const departmentCount = {};
+        if (Array.isArray(reactionDetails)) {
+            reactionDetails.forEach(detail => {
+                const email = detail.employee_email;
+                const department = email.match(/\.([a-zA-Z]+)@/);
+                if (department && department[1]) {
+                    departmentCount[department[1]] = (departmentCount[department[1]] || 0) + 1;
+                }
+            });
+        }
+
+        const departmentLabels = Object.keys(departmentCount);
+        const departmentData = Object.values(departmentCount);
+
+        const departmentChartCtx = document.getElementById('departmentChart').getContext('2d');
+        new Chart(departmentChartCtx, {
+            type: 'pie',
+            data: {
+                labels: departmentLabels,
+                datasets: [{
+                    data: departmentData,
+                    backgroundColor: [
+                        '#ff6f61', // .it
+                        '#a38cd5', // .hr
+                        '#e84a5f', // others
+                        '#b8a9d9',
+                        '#4caf50'
+                    ],
+                    borderColor: '#333333',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 14 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                return `${label}: ${value}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Render paginated reactions table
+        if (Array.isArray(reactionDetails) && reactionDetails.length > 0) {
+            renderReactionTable(reactionDetails, 1, 6);
+        }
+
+        // Snow animation
+        const mostFrequentReaction = getMostFrequentReaction(reactionDetails);
+        const snowContainer = document.getElementById('snowContainer');
+        if (mostFrequentReaction && emojiMap[mostFrequentReaction]) {
+            const emoji = emojiMap[mostFrequentReaction];
+            function createSnowflake() {
+                const snowflake = document.createElement('div');
+                snowflake.className = 'snow-emoji';
+                snowflake.textContent = emoji;
+                snowflake.style.left = Math.random() * 100 + 'vw';
+                snowflake.style.animationDuration = (Math.random() * 4 + 6) + 's';
+                snowflake.style.fontSize = (Math.random() * 10 + 20) + 'px';
+                const drift = Math.random() * 2 - 1;
+                snowflake.style.setProperty('--drift', drift);
+                snowContainer.appendChild(snowflake);
+
+                snowflake.addEventListener('animationend', () => {
+                    snowflake.remove();
+                });
+            }
+
+            for (let i = 0; i < 25; i++) {
+                setTimeout(createSnowflake, Math.random() * 2000);
+            }
+            setInterval(createSnowflake, 300);
+        } else {
+            console.warn("No snow animation: No valid reaction found");
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Monitor Devices{% endblock %}
+{% block content %}
+<div class="container mt-5">
+    <h1>Monitor Devices</h1>
+    {% if error %}
+    <div class="alert alert-danger">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Table for inactive devices -->
+    <h2>Inactive Devices</h2>
+    <div class="mb-3">
+        <button id="allActiveInactive" class="btn btn-success btn-sm">All Active</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th><input type="checkbox" id="selectAllInactive" onchange="toggleSelectAll('inactive')"></th>
+                    <th>Email</th>
+                    <th>Hostname</th>
+                    <th>Status</th>
+                    <th>Last Seen</th>
+                    <th>App Running</th>
+                    <th>Device Type</th>
+                    <th>Verification Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="inactiveDeviceTable">
+                {% for device in inactive_devices %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><input type="checkbox" data-employee-id="{{ device.employee_id }}"></td>
+                    <td>{{ device.email | default('N/A') }}</td>
+                    <td>{{ device.hostname | default('N/A') }}</td>
+                    <td>{{ device.status | default('N/A') }}</td>
+                    <td>{{ device.last_seen | default('N/A') }}</td>
+                    <td>{{ 'Yes' if device.app_running else 'No' }}</td>
+                    <td>{{ device.device_type | default('N/A') }}</td>
+                    <td>
+                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined %}
+                        <span 
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top" 
+                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}"
+                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid else 'red' }}'; cursor: pointer;">
+                            {{ '✔' if device.is_hostname_valid and device.is_email_valid else '✖' }}
+                        </span>
+                        {% else %}
+                        <span style="color: gray;">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button class="btn btn-success btn-sm" onclick="updateDeviceStatus('{{ device.employee_id }}', true)">Activate</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="text-center">No inactive devices found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Pagination for Inactive Devices -->
+    <div class="pagination-controls mt-3">
+        <button id="prevInactive" class="btn btn-secondary btn-sm" onclick="changePage('inactive', -1)" disabled>
+            <i class="bi bi-chevron-left"></i> Previous
+        </button>
+        <span id="pageInfoInactive" class="mx-2">Page 1</span>
+        <button id="nextInactive" class="btn btn-secondary btn-sm" onclick="changePage('inactive', 1)">
+            Next <i class="bi bi-chevron-right"></i>
+        </button>
+    </div>
+
+    <!-- Table for active devices -->
+    <h2>Active Devices</h2>
+    <div class="mb-3">
+        <button id="allDeactiveActive" class="btn btn-danger btn-sm">All Deactive</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th><input type="checkbox" id="selectAllActive" onchange="toggleSelectAll('active')"></th>
+                    <th>Email</th>
+                    <th>Hostname</th>
+                    <th>Status</th>
+                    <th>Last Seen</th>
+                    <th>App Running</th>
+                    <th>Device Type</th>
+                    <th>Verification Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="activeDeviceTable">
+                {% for device in active_devices %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td><input type="checkbox" data-employee-id="{{ device.employee_id }}"></td>
+                    <td>{{ device.email | default('N/A') }}</td>
+                    <td>{{ device.hostname | default('N/A') }}</td>
+                    <td>{{ device.status | default('N/A') }}</td>
+                    <td>{{ device.last_seen | default('N/A') }}</td>
+                    <td>{{ 'Yes' if device.app_running else 'No' }}</td>
+                    <td>{{ device.device_type | default('N/A') }}</td>
+                    <td>
+                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined %}
+                        <span 
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top" 
+                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}"
+                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid else 'red' }}'; cursor: pointer;">
+                            {{ '✔' if device.is_hostname_valid and device.is_email_valid else '✖' }}
+                        </span>
+                        {% else %}
+                        <span style="color: gray;">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" onclick="updateDeviceStatus('{{ device.employee_id }}', false)">Deactive</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="text-center">No active devices found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <!-- Pagination for Active Devices -->
+    <div class="pagination-controls mt-3">
+        <button id="prevActive" class="btn btn-secondary btn-sm" onclick="changePage('active', -1)" disabled>
+            <i class="bi bi-chevron-left"></i> Previous
+        </button>
+        <span id="pageInfoActive" class="mx-2">Page 1</span>
+        <button id="nextActive" class="btn btn-secondary btn-sm" onclick="changePage('active', 1)">
+            Next <i class="bi bi-chevron-right"></i>
+        </button>
+    </div>
+</div>
+
+<script>
+    let inactivePage = 1;
+    let activePage = 1;
+    const pageSize = 10;
+    const inactiveRows = '{{ inactive_devices | tojson }}';
+    const activeRows = '{{ active_devices | tojson }}';
+
+    function updateTable(tableType) {
+        const table = document.getElementById(`${tableType}DeviceTable`);
+        const pageInfo = document.getElementById(`pageInfo${tableType.charAt(0).toUpperCase() + tableType.slice(1)}`);
+        const prevButton = document.getElementById(`prev${tableType.charAt(0).toUpperCase() + tableType.slice(1)}`);
+        const nextButton = document.getElementById(`next${tableType.charAt(0).toUpperCase() + tableType.slice(1)}`);
+        const rows = tableType === 'inactive' ? inactiveRows : activeRows;
+        const currentPage = tableType === 'inactive' ? inactivePage : activePage;
+        const maxRows = rows.length;
+
+        const startIdx = (currentPage - 1) * pageSize;
+        const endIdx = Math.min(startIdx + pageSize, maxRows);
+
+        const totalPages = Math.ceil(maxRows / pageSize);
+        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+        prevButton.disabled = currentPage === 1;
+        nextButton.disabled = currentPage === totalPages;
+
+        // Update row visibility
+        const tableRows = table.querySelectorAll('tr');
+        tableRows.forEach((row, index) => {
+            row.style.display = (index >= startIdx && index < endIdx) ? '' : 'none';
+        });
+
+        // Initialize Bootstrap tooltips
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(element => {
+            new bootstrap.Tooltip(element);
+        });
+    }
+
+    function changePage(tableType, delta) {
+        const currentPage = tableType === 'inactive' ? inactivePage : activePage;
+        let newPage = currentPage + delta;
+        const totalRows = tableType === 'inactive' ? inactiveRows.length : activeRows.length;
+        const totalPages = Math.ceil(totalRows / pageSize);
+
+        if (newPage < 1 || newPage > totalPages) return;
+
+        if (tableType === 'inactive') inactivePage = newPage;
+        else activePage = newPage;
+        updateTable(tableType);
+    }
+
+    function toggleSelectAll(tableType) {
+        const selectAllCheckbox = document.getElementById(`selectAll${tableType.charAt(0).toUpperCase() + tableType.slice(1)}`);
+        const checkboxes = document.querySelectorAll(`#${tableType}DeviceTable input[type="checkbox"]`);
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+    }
+
+    async function updateDeviceStatus(employeeId, newStatus) {
+        try {
+            const response = await fetch('/update_device_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employee_id: employeeId, active_status: newStatus })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                alert(`Device ${newStatus ? 'activated' : 'deactivated'} successfully`);
+                window.location.reload();
+            } else {
+                alert(`Failed to update status: ${result.message}`);
+            }
+        } catch (error) {
+            console.error('Error updating device status:', error);
+            alert('Error updating device status');
+        }
+    }
+
+    async function updateBulkStatus(tableType, newStatus) {
+        const checkboxes = document.querySelectorAll(`#${tableType}DeviceTable input[type="checkbox"]:checked`);
+        const updates = Array.from(checkboxes).map(checkbox => ({
+            employee_id: checkbox.dataset.employeeId,
+            active_status: newStatus
+        }));
+
+        if (updates.length === 0) {
+            alert('No devices selected');
+            return;
+        }
+
+        try {
+            const response = await fetch('/update_bulk_device_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            const result = await response.json();
+            if (response.ok) {
+                alert(`Successfully updated ${updates.length} device(s)`);
+                window.location.reload();
+            } else {
+                alert(`Failed to update devices: ${result.message}`);
+            }
+        } catch (error) {
+            console.error('Error updating bulk device status:', error);
+            alert('Error updating bulk device status');
+        }
+    }
+
+    document.getElementById('allActiveInactive').addEventListener('click', () => updateBulkStatus('inactive', true));
+    document.getElementById('allDeactiveActive').addEventListener('click', () => updateBulkStatus('active', false));
+
+    // Initial table update
+    updateTable('inactive');
+    updateTable('active');
+</script>
+{% endblock %}

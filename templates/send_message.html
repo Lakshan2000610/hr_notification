@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}Send Message{% endblock %}
+{% block content %}
+<style>
+    /* Popup styles */
+    .popup-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+    .popup-content {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        width: 300px;
+        height: auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        text-align: center;
+        font-size: 16px;
+        font-weight: bold;
+        color: #333;
+    }
+    .popup-content.success {
+        background: #d4edda;
+        color: #155724;
+    }
+    .popup-content.error {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 10px;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .note {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+</style>
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="text-center mb-4">Send Message</h1>
+        {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+        <form id="messageForm" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="title" class="form-label">Message Title (max 100 characters)</label>
+                <input type="text" class="form-control" id="title" name="title" maxlength="100" required>
+            </div>
+            <div class="mb-3">
+                <label for="text" class="form-label">Message Text</label>
+                <textarea class="form-control" id="text" name="text" rows="4" required></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="video" class="form-label">Upload Video (Optional)</label>
+                <input type="file" class="form-control" id="video" name="video" accept="video/mp4">
+                <div class="note">Supported format: MP4</div>
+            </div>
+            <div class="mb-3">
+                <label for="image" class="form-label">Upload Image (Optional)</label>
+                <input type="file" class="form-control" id="image" name="image" accept="image/jpeg,image/png">
+                <div class="note">Supported formats: JPG, PNG</div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Schedule Options</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="send_now" name="send_now">
+                    <label class="form-check-label" for="send_now">Send Now</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="scheduled_time_check" name="scheduled_time_check">
+                    <label class="form-check-label" for="scheduled_time_check">Scheduled Time</label>
+                </div>
+                <div id="scheduled_time_div" class="mt-2" style="display: none;">
+                    <input type="datetime-local" class="form-control" id="scheduled_time" name="scheduled_time">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Select Employees</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="send_all" name="send_all">
+                    <label class="form-check-label" for="send_all">Send to All Employees</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="send_specific" name="send_specific">
+                    <label class="form-check-label" for="send_specific">Send to Specific Department</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="send_individual" name="send_individual">
+                    <label class="form-check-label" for="send_individual">Individual Member</label>
+                </div>
+                <div id="department_div" class="mt-2" style="display: none;">
+                    <select class="form-control" id="department" name="department">
+                        <option value="">Select Department</option>
+                        {% for dept in departments %}
+                            <option value="{{ dept }}">{{ dept | capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="individual_div" class="mt-2" style="display: none;">
+                    <select class="form-control" id="individual" name="individual">
+                        <option value="">Select Employee</option>
+                        {% for emp in active_employees %}
+                            <option value="{{ emp.id }}">{{ emp.email }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Send Message</button>
+            <div class="note">You can upload both an image and a video for 'both' type content.</div>
+        </form>
+        <a href="{{ url_for('home') }}" class="btn btn-link mt-3">Back to Home</a>
+    </div>
+</div>
+<div id="popupOverlay" class="popup-overlay">
+    <div id="popupContent" class="popup-content">
+        <div class="spinner"></div>
+    </div>
+</div>
+<script>
+    // Parse the pre-formatted JSON from app.py
+    const employees = JSON.parse('{{ employees_json | safe }}');
+    console.log('Employees JSON:', employees);
+
+    // Log employees for debugging
+    const employeeOptions = document.querySelectorAll('#individual option');
+    console.log('Individual dropdown options:', Array.from(employeeOptions).map(opt => opt.value));
+
+
+    const errorMessage = '{{ error | safe }}';
+    if (errorMessage || !employees || employees.length === 0) {
+        console.log('Disabling form due to error or no employees:', errorMessage);
+        document.getElementById('messageForm').querySelector('button[type="submit"]').disabled = true;
+        document.getElementById('send_all').disabled = true;
+        document.getElementById('send_specific').disabled = true;
+        document.getElementById('send_individual').disabled = true;
+        document.getElementById('department').disabled = true;
+        document.getElementById('individual').disabled = true;
+        alert(errorMessage || 'No active employees available. Please contact the administrator to activate employees.');
+    }
+
+    // Handle scheduling checkboxes
+    const sendNowCheckbox = document.getElementById('send_now');
+    const scheduledTimeCheckbox = document.getElementById('scheduled_time_check');
+    const scheduledTimeDiv = document.getElementById('scheduled_time_div');
+    const scheduledTimeInput = document.getElementById('scheduled_time');
+
+    sendNowCheckbox.addEventListener('change', () => {
+        if (sendNowCheckbox.checked) {
+            scheduledTimeCheckbox.checked = false;
+            scheduledTimeDiv.style.display = 'none';
+            scheduledTimeInput.removeAttribute('required');
+        }
+    });
+
+    scheduledTimeCheckbox.addEventListener('change', () => {
+        if (scheduledTimeCheckbox.checked) {
+            sendNowCheckbox.checked = false;
+            scheduledTimeDiv.style.display = 'block';
+            scheduledTimeInput.setAttribute('required', 'required');
+        } else {
+            scheduledTimeDiv.style.display = 'none';
+            scheduledTimeInput.removeAttribute('required');
+        }
+    });
+
+    // Handle employee selection checkboxes
+    const sendAllCheckbox = document.getElementById('send_all');
+    const sendSpecificCheckbox = document.getElementById('send_specific');
+    const sendIndividualCheckbox = document.getElementById('send_individual');
+    const departmentDiv = document.getElementById('department_div');
+    const departmentSelect = document.getElementById('department');
+    const individualDiv = document.getElementById('individual_div');
+    const individualSelect = document.getElementById('individual');
+
+    sendAllCheckbox.addEventListener('change', () => {
+        console.log('Send All checked:', sendAllCheckbox.checked);
+        if (sendAllCheckbox.checked) {
+            sendSpecificCheckbox.checked = false;
+            sendIndividualCheckbox.checked = false;
+            departmentDiv.style.display = 'none';
+            individualDiv.style.display = 'none';
+            departmentSelect.removeAttribute('required');
+            individualSelect.removeAttribute('required');
+        }
+    });
+
+    sendSpecificCheckbox.addEventListener('change', () => {
+        console.log('Send Specific checked:', sendSpecificCheckbox.checked);
+        if (sendSpecificCheckbox.checked) {
+            sendAllCheckbox.checked = false;
+            sendIndividualCheckbox.checked = false;
+            departmentDiv.style.display = 'block';
+            individualDiv.style.display = 'none';
+            departmentSelect.setAttribute('required', 'required');
+            individualSelect.removeAttribute('required');
+        } else {
+            departmentDiv.style.display = 'none';
+            departmentSelect.removeAttribute('required');
+        }
+    });
+
+    sendIndividualCheckbox.addEventListener('change', () => {
+        console.log('Send Individual checked:', sendIndividualCheckbox.checked);
+        if (sendIndividualCheckbox.checked) {
+            sendAllCheckbox.checked = false;
+            sendSpecificCheckbox.checked = false;
+            departmentDiv.style.display = 'none';
+            individualDiv.style.display = 'block';
+            departmentSelect.removeAttribute('required');
+            individualSelect.setAttribute('required', 'required');
+            console.log('Individual div display:', individualDiv.style.display);
+        } else {
+            individualDiv.style.display = 'none';
+            individualSelect.removeAttribute('required');
+        }
+    });
+
+    // Handle form submission with popup
+    const popupOverlay = document.getElementById('popupOverlay');
+    const popupContent = document.getElementById('popupContent');
+
+    document.getElementById('messageForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+
+        // Validate title
+        const title = formData.get('title').trim();
+        if (!title) {
+            alert('Please enter a message title');
+            return;
+        }
+        if (title.length > 100) {
+            alert('Message title cannot exceed 100 characters');
+            return;
+        }
+
+        // Handle employee selection
+        let employeeIds = [];
+        if (sendAllCheckbox.checked) {
+            employeeIds = employees.map(emp => emp.id);
+        } else if (sendSpecificCheckbox.checked) {
+            const selectedDept = departmentSelect.value;
+            if (!selectedDept) {
+                alert('Please select a department');
+                return;
+            }
+            employeeIds = employees
+                .filter(emp => emp.department === selectedDept)
+                .map(emp => emp.id);
+        } else if (sendIndividualCheckbox.checked) {
+            const selectedEmployee = individualSelect.value;
+            if (!selectedEmployee) {
+                alert('Please select an employee');
+                return;
+            }
+            employeeIds = [selectedEmployee];
+        }
+
+        console.log('Selected employee IDs:', employeeIds);
+        if (employeeIds.length === 0) {
+            alert('No employees selected');
+            return;
+        }
+
+        // Append employee IDs to formData
+        employeeIds.forEach(id => formData.append('employees', id));
+
+        // Remove scheduled_time if Send Now is checked
+        if (sendNowCheckbox.checked) {
+            formData.delete('scheduled_time');
+        }
+
+        // Show loading popup
+        popupContent.innerHTML = '<div class="spinner"></div>';
+        popupContent.classList.remove('success', 'error');
+        popupOverlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden'; // Disable background scrolling
+
+        try {
+            const response = await fetch('/send_message', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            console.log('Server response:', result);
+
+            // Show success or error message
+            popupContent.textContent = result.message;
+            popupContent.classList.add(response.ok ? 'success' : 'error');
+            setTimeout(() => {
+                popupOverlay.style.display = 'none';
+                document.body.style.overflow = 'auto'; // Re-enable background
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            }, 2000); // Hide popup after 2 seconds
+        } catch (error) {
+            console.error('Form submission error:', error);
+            popupContent.textContent = 'Error sending message: ' + error.message;
+            popupContent.classList.add('error');
+            setTimeout(() => {
+                popupOverlay.style.display = 'none';
+                document.body.style.overflow = 'auto';
+            }, 2000);
+        }
+    });
+
+    // Optional: Add validation feedback for both image and video
+    const imageInput = document.getElementById('image');
+    const videoInput = document.getElementById('video');
+    const noteDiv = document.querySelectorAll('.note')[2]; // Last note div
+
+    function updateNote() {
+        if (imageInput.files.length > 0 && videoInput.files.length > 0) {
+            noteDiv.textContent = 'Both image and video uploaded. Content will be of type "both".';
+            noteDiv.style.color = '#155724';
+        } else if (imageInput.files.length > 0) {
+            noteDiv.textContent = 'Image uploaded. Content will be of type "image".';
+            noteDiv.style.color = '#666';
+        } else if (videoInput.files.length > 0) {
+            noteDiv.textContent = 'Video uploaded. Content will be of type "video".';
+            noteDiv.style.color = '#666';
+        } else {
+            noteDiv.textContent = 'You can upload both an image and a video for "both" type content.';
+            noteDiv.style.color = '#666';
+        }
+    }
+
+    imageInput.addEventListener('change', updateNote);
+    videoInput.addEventListener('change', updateNote);
+</script>
+{% endblock %}

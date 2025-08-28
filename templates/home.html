@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome to HR Notification system</h1>
+<p>This is the home page where you can manage your content and view statistics.</p>
+
+{% if error %}
+<p style="color: red;">{{ error }}</p>
+{% endif %}
+
+<div class="dashboard-stats">
+    <div class="stat-box">
+        <h3>Registered Employees</h3>
+        <p>{{ employee_count }}</p>
+    </div>
+    <div class="stat-box">
+        <h3>Active Devices</h3>
+        <p>{{ active_devices }}</p>
+    </div>
+    <div class="stat-box">
+        <h3>Scheduled Content</h3>
+        <p>{{ pending_content }}</p>
+    </div>
+    <div class="stat-box">
+        <h3>Send now Content</h3>
+        <p>{{ recent_notifications }}</p>
+    </div>
+</div>
+
+<h2>Content Reactions and Feedback</h2>
+{% if content_stats %}
+<table class="content-table">
+    <thead>
+        <tr>
+            <th>Message</th>
+            <th>Likes</th>
+            <th>Unlikes</th>
+            <th>Hearts</th>
+            <th>Cries</th>
+            <th>Feedback</th>
+            <th>View Count</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for stat in paginated_stats %}
+        <tr>
+            <td>{{ stat.title }}</td>
+            <td>{{ stat.like_count }}</td>
+            <td>{{ stat.unlike_count }}</td>
+            <td>{{ stat.heart_count }}</td>
+            <td>{{ stat.cry_count }}</td>
+            <td>{{ stat.feedback_count }}</td>
+            <td>{{ stat.view_count }}</td>
+            <td><a href="{{ url_for('view_reactions', content_id=stat.id) }}" class="view-btn">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination Controls -->
+<div class="pagination">
+    {% if current_page > 1 %}
+    <a href="?page={{ current_page - 1 }}" class="page-link">Previous</a>
+    {% endif %}
+
+    {% for page_num in range(1, total_pages + 1) %}
+    <a href="?page={{ page_num }}" class="page-link {% if page_num == current_page %}active{% endif %}">{{ page_num }}</a>
+    {% endfor %}
+
+    {% if current_page < total_pages %}
+    <a href="?page={{ current_page + 1 }}" class="page-link">Next</a>
+    {% endif %}
+</div>
+
+{% else %}
+<p>No content available. Send a message to populate this table.</p>
+{% endif %}
+
+<style>
+    .dashboard-stats {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+    }
+    .stat-box {
+        background-color: #f9f9f9;
+        padding: 15px;
+        border-radius: 5px;
+        text-align: center;
+        flex: 1;
+    }
+    .stat-box h3 {
+        margin: 0 0 10px;
+        font-size: 1.1em;
+        color: #333;
+    }
+    .stat-box p {
+        margin: 0;
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #007bff;
+    }
+    .content-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    .content-table th, .content-table td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    .content-table th {
+        background-color: #f2f2f2;
+    }
+    .content-table tr:nth-child(even) {
+        background-color: #f9f9f9;
+    }
+    .content-table tr:hover {
+        background-color: #f1f1f1;
+    }
+    .view-btn {
+        display: inline-block;
+        padding: 5px 10px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 3px;
+    }
+    .view-btn:hover {
+        background-color: #0056b3;
+    }
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    .page-link {
+        padding: 5px 10px;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+        text-decoration: none;
+        color: #007bff;
+    }
+    .page-link:hover {
+        background-color: #f1f1f1;
+    }
+    .page-link.active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const pageLinks = document.querySelectorAll('.page-link');
+        pageLinks.forEach(link => {
+            link.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const url = new URL(link.href);
+                const page = url.searchParams.get('page');
+                
+                // Fetch paginated data
+                const response = await fetch(`/get_paginated_stats?page=${page}`);
+                const data = await response.json();
+                
+                // Update table content
+                const tbody = document.querySelector('.content-table tbody');
+                tbody.innerHTML = '';
+                data.paginated_stats.forEach(stat => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${stat.title}</td>
+                        <td>${stat.like_count}</td>
+                        <td>${stat.unlike_count}</td>
+                        <td>${stat.heart_count}</td>
+                        <td>${stat.cry_count}</td>
+                        <td>${stat.feedback_count}</td>
+                        <td>${stat.view_count}</td>
+                        <td><a href="/view_reactions/${stat.id}" class="view-btn">View</a></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                // Update pagination links
+                const pagination = document.querySelector('.pagination');
+                pagination.innerHTML = '';
+                if (data.current_page > 1) {
+                    pagination.innerHTML += `<a href="?page=${data.current_page - 1}" class="page-link">Previous</a>`;
+                }
+                for (let i = 1; i <= data.total_pages; i++) {
+                    pagination.innerHTML += `<a href="?page=${i}" class="page-link ${i === data.current_page ? 'active' : ''}">${i}</a>`;
+                }
+                if (data.current_page < data.total_pages) {
+                    pagination.innerHTML += `<a href="?page=${data.current_page + 1}" class="page-link">Next</a>`;
+                }
+
+                // Update URL without reloading
+                history.pushState({}, '', `?page=${page}`);
+
+                // Re-attach event listeners
+                const newPageLinks = document.querySelectorAll('.page-link');
+                newPageLinks.forEach(newLink => {
+                    newLink.addEventListener('click', arguments.callee);
+                });
+            });
+        });
+    });
+</script>
+{% endblock %}
