@@ -1,5 +1,7 @@
 import getpass
+import subprocess
 import sys
+import tempfile
 import uuid
 import requests
 import time
@@ -7,7 +9,7 @@ import logging
 import threading
 import os
 from datetime import datetime, timezone, timedelta
-from random import randint
+from random import randint, random
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                               QScrollArea, QFrame, QComboBox, QDialog, QMessageBox, QSystemTrayIcon, QMenu, QProgressBar,
                               QStackedWidget, QTextEdit, QGraphicsView, QGraphicsScene,QSizePolicy)
@@ -18,6 +20,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QGraphicsOpacityEffect
 import socket
 import platform
+from packaging import version
 
 # Helper function to get correct path for bundled assets
 def resource_path(relative_path):
@@ -29,18 +32,21 @@ def resource_path(relative_path):
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
 
-# Configure logging
+# Configure logging with UTF-8 encoding
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(os.getenv('TEMP'), 'student_app.log')),
+        logging.FileHandler(os.path.join(os.getenv('TEMP'), 'student_app.log'), encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
 
 class StudentApp(QMainWindow):
+    APP_VERSION = "1.0.0"
+
     new_content_signal = Signal(dict)
+    update_scroll_signal = Signal()
 
     def __init__(self):
         super().__init__()
@@ -69,6 +75,7 @@ class StudentApp(QMainWindow):
         self.media_player = None
         self.video_widget = None
         self.audio_output = None
+        self.update_scroll_signal.connect(self.update_scroll_area)
         self.tray_icon = None
         self.all_content = []
         self.current_content_index = 0
@@ -99,6 +106,9 @@ class StudentApp(QMainWindow):
         self.new_content_signal.connect(self.show_message_dialog)
         self.fetch_views()
 
+        # Start update check after a random delay (0–300 seconds) to stagger requests
+        QTimer.singleShot(random.randint(0, 300000), self.check_for_updates)
+        
     def get_ip(self):
         try:
             ip = socket.gethostbyname(socket.gethostname())
@@ -107,6 +117,99 @@ class StudentApp(QMainWindow):
         logging.debug(f"Detected IP: {ip}")
         return ip
 
+    def setup_logging(self):
+        log_file = os.path.join(os.getenv('TEMP'), f"student_app_{self.employee_id or 'unknown'}.log")
+        logging.basicConfig(
+            level=logging.INFO,  # Changed to INFO for production
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file, encoding='utf-8'),
+                logging.StreamHandler()
+            ]
+        )
+
+    def check_for_updates(self):
+        version_url = f"{self.server_url}updates/version"
+        exe_url = f"{self.server_url}updates/app"
+        try:
+            logging.info("Checking for updates...")
+            response = requests.get(version_url, timeout=10)  # Increased timeout
+            response.raise_for_status()
+            latest_version = response.text.strip()
+            if version.parse(latest_version) > version.parse(self.APP_VERSION):
+                logging.info(f"Update available: {latest_version} (current: {self.APP_VERSION})")
+                self.show_update_dialog(exe_url, latest_version)
+            else:
+                logging.info("App is up to date")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Update check failed: {str(e)}")
+
+    def show_update_dialog(self, exe_url, new_version):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Updating Application")
+        dialog.setFixedSize(300, 100)
+        dialog.setStyleSheet("background-color: #ece4f7;")
+        dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        layout = QVBoxLayout(dialog)
+        label = QLabel(f"Downloading update to version {new_version}...")
+        label.setStyleSheet("color: #333333; font-size: 14px;")
+        layout.addWidget(label)
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        layout.addWidget(progress_bar)
+        dialog.show()
+
+        def download_and_update():
+            try:
+                temp_dir = tempfile.gettempdir()
+                new_exe_path = os.path.join(temp_dir, f"app_{new_version}.exe")
+                # Clean up old .exe files
+                for old_file in os.listdir(temp_dir):
+                    if old_file.startswith("app_") and old_file.endswith(".exe"):
+                        try:
+                            os.remove(os.path.join(temp_dir, old_file))
+                            logging.info(f"Removed old update file: {old_file}")
+                        except Exception as e:
+                            logging.warning(f"Failed to remove old file {old_file}: {str(e)}")
+                response = requests.get(exe_url, timeout=10, stream=True)
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                with open(new_exe_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                progress_bar.setValue(int((downloaded / total_size) * 100))
+                logging.info(f"Downloaded update to {new_exe_path}")
+                current_exe = sys.executable
+                batch_path = os.path.join(temp_dir, "update.bat")
+                with open(batch_path, 'w') as batch:
+                    batch.write(f"""@echo off
+    timeout /t 3 /nobreak >nul
+    del "{current_exe}"
+    copy "{new_exe_path}" "{current_exe}"
+    start "" "{current_exe}"
+    del "{batch_path}"
+    """)
+                subprocess.Popen(batch_path, shell=True)
+                dialog.close()
+                logging.info("Update batch started. Exiting app...")
+                QApplication.quit()
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Update failed: {str(e)}")
+                dialog.close()
+                QMessageBox.warning(self, "Update Failed", f"Failed to update: {str(e)}")
+                try:
+                    if os.path.exists(new_exe_path):
+                        os.remove(new_exe_path)
+                        logging.info(f"Cleaned up failed download: {new_exe_path}")
+                except Exception as e:
+                    logging.warning(f"Failed to clean up {new_exe_path}: {str(e)}")
+
+        QTimer.singleShot(0, download_and_update)
+
     def fetch_views(self):
         """Fetch view data from server to populate viewed_durations."""
         try:
@@ -114,9 +217,13 @@ class StudentApp(QMainWindow):
             response = requests.get(f"{self.server_url}/views/{self.employee_id}", timeout=5)
             response.raise_for_status()
             views = response.json().get('views', [])
-            self.viewed_durations = {view['content_id']: view['viewed_duration'] for view in views}
-            logging.debug(f"Fetched views: {self.viewed_durations}")
-            self.update_scroll_area()  # Update sidebar to reflect fetched durations
+            # Merge server data with local viewed_durations to preserve local updates
+            server_durations = {view['content_id']: view['viewed_duration'] for view in views}
+            for content_id, duration in server_durations.items():
+                if content_id not in self.viewed_durations or duration > self.viewed_durations[content_id]:
+                    self.viewed_durations[content_id] = duration
+            logging.debug(f"Merged viewed_durations: {self.viewed_durations}")
+            self.update_scroll_signal.emit()
         except requests.exceptions.RequestException as e:
             logging.error(f"Error fetching views: {str(e)}")
             QMessageBox.warning(self, "Warning", f"Failed to fetch view data: {str(e)}")
@@ -593,6 +700,7 @@ class StudentApp(QMainWindow):
             self.stop_button.setIcon(QIcon.fromTheme("media-playback-stop"))
             logging.debug(f"Countdown resumed with {self.countdown_remaining} seconds remaining")
 
+
     def show_content(self):
         if not self.all_content:
             self.message_display.setText("")
@@ -621,207 +729,232 @@ class StudentApp(QMainWindow):
             self.graphics_view = None
             self.scene = None
 
-        self.loading_bar.setVisible(True)
+        media_layout = self.media_frame.layout()
 
-        self.play_again_button = QPushButton("Play Again")
-        self.play_again_button.setEnabled(False)
-        self.play_again_button.clicked.connect(self.play_again)
-        self.play_again_button.enterEvent = lambda event: self.animate_button(self.play_again_button, True)
-        self.play_again_button.leaveEvent = lambda event: self.animate_button(self.play_again_button, False)
-
-        self.start_countdown()
-
-        # Always display the message on the left
         self.message_display.setText(content['text'])
         self.message_display.setVisible(True)
 
-        has_media = content.get('image_url') or (content['type'] == 'video' and content.get('url')) or content['type'] == 'both'
+        has_image = bool(content.get('image_url'))
+        has_video = bool(content.get('type') == 'video' and content.get('url'))
+        has_both = bool(content.get('type') == 'both' and content.get('url') and content.get('image_url'))
 
-        if has_media:
-            main_widget = QWidget()
-            main_layout = QVBoxLayout(main_widget)
-            main_layout.setContentsMargins(0, 0, 0, 0)
-            main_layout.setSpacing(10)
+        self.loading_bar.setVisible(has_image or has_video or has_both)
 
+        self.start_countdown()
+
+        if has_both:
+            # Add message full width
+            media_layout.addWidget(self.message_display)
+
+            # Then row for video left, image right
             row_widget = QWidget()
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(10)
 
-            if content['type'] == 'both' and content.get('url') and content.get('image_url'):
-                # Video section
-                video_frame = QFrame()
-                video_layout = QVBoxLayout(video_frame)
-                try:
-                    self.media_player = QMediaPlayer()
-                    self.audio_output = QAudioOutput()
-                    self.media_player.setAudioOutput(self.audio_output)
-                    self.media_player.setSource(QUrl(content['url']))
-                    self.video_widget = QVideoWidget()
-                    self.video_widget.setMinimumSize(150, 100)
-                    self.media_player.setVideoOutput(self.video_widget)
-                    video_layout.addWidget(self.video_widget)
+            # Video section
+            video_frame = QFrame()
+            video_layout = QVBoxLayout(video_frame)
+            try:
+                self.media_player = QMediaPlayer()
+                self.audio_output = QAudioOutput()
+                self.media_player.setAudioOutput(self.audio_output)
+                self.media_player.setSource(QUrl(content['url']))
+                self.video_widget = QVideoWidget()
+                self.video_widget.setMinimumSize(150, 100)
+                self.media_player.setVideoOutput(self.video_widget)
+                video_layout.addWidget(self.video_widget)
 
-                    video_button_frame = QFrame()
-                    video_button_layout = QHBoxLayout(video_button_frame)
-                    self.audio_output.setMuted(True)
-                    unmute_button = QPushButton("Unmute")
-                    unmute_button.clicked.connect(self.toggle_mute)
-                    unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
-                    unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
-                    video_button_layout.addWidget(unmute_button)
-                    video_button_layout.addWidget(self.play_again_button)
-                    video_layout.addWidget(video_button_frame)
+                video_button_frame = QFrame()
+                video_button_layout = QHBoxLayout(video_button_frame)
+                self.audio_output.setMuted(True)
+                unmute_button = QPushButton("Unmute")
+                unmute_button.clicked.connect(self.toggle_mute)
+                unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
+                unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
+                video_button_layout.addWidget(unmute_button)
 
-                    self.video_widget.setVisible(True)
-                    self.media_player.play()
-                    self.media_player.mediaStatusChanged.connect(self.handle_media_status)
-                except Exception as e:
-                    logging.error(f"Error loading video for both: {str(e)}")
-                row_layout.addWidget(video_frame)
+                self.play_again_button = QPushButton("Play Again")
+                self.play_again_button.setEnabled(False)
+                self.play_again_button.clicked.connect(self.play_again)
+                self.play_again_button.enterEvent = lambda event: self.animate_button(self.play_again_button, True)
+                self.play_again_button.leaveEvent = lambda event: self.animate_button(self.play_again_button, False)
+                video_button_layout.addWidget(self.play_again_button)
 
-                # Image section (responsive)
-                image_container = QWidget()
-                image_layout = QVBoxLayout(image_container)
-                image_layout.setContentsMargins(0, 0, 0, 0)
-                image_layout.setSpacing(0)
-                try:
-                    response = requests.get(content['image_url'], timeout=5)
-                    response.raise_for_status()
-                    image = QImage()
-                    image.loadFromData(response.content)
-                    if image.isNull():
-                        raise ValueError("Image is null or invalid")
+                video_layout.addWidget(video_button_frame)
 
-                    self.scene = QGraphicsScene()
-                    pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
-                    self.graphics_view = QGraphicsView(image_container)
-                    self.graphics_view.setScene(self.scene)
-                    self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
-                    self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-                    self.graphics_view.setAlignment(Qt.AlignCenter)
-                    self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                self.video_widget.setVisible(True)
+                self.media_player.play()
+                self.media_player.mediaStatusChanged.connect(self.handle_media_status)
+            except Exception as e:
+                logging.error(f"Error loading video for both: {str(e)}")
+            row_layout.addWidget(video_frame)
 
-                    image_layout.addWidget(self.graphics_view)
+            # Image section
+            image_container = QWidget()
+            image_layout = QVBoxLayout(image_container)
+            image_layout.setContentsMargins(0, 0, 0, 0)
+            image_layout.setSpacing(0)
+            try:
+                response = requests.get(content['image_url'], timeout=5)
+                response.raise_for_status()
+                image = QImage()
+                image.loadFromData(response.content)
+                if image.isNull():
+                    raise ValueError("Image is null or invalid")
 
-                    zoom_frame = QFrame()
-                    zoom_layout = QHBoxLayout(zoom_frame)
-                    zoom_layout.setContentsMargins(0, 0, 0, 0)
-                    zoom_layout.setSpacing(5)
+                self.scene = QGraphicsScene()
+                pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
+                self.graphics_view = QGraphicsView(image_container)
+                self.graphics_view.setScene(self.scene)
+                self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
+                self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+                self.graphics_view.setAlignment(Qt.AlignCenter)
+                self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-                    zoom_in_btn = QPushButton("+", image_container)
-                    zoom_in_btn.setFixedSize(30, 30)
-                    zoom_in_btn.clicked.connect(self.zoom_in_image)
-                    zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
-                    zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
-                    zoom_layout.addWidget(zoom_in_btn)
+                image_layout.addWidget(self.graphics_view)
 
-                    zoom_out_btn = QPushButton("-", image_container)
-                    zoom_out_btn.setFixedSize(30, 30)
-                    zoom_out_btn.clicked.connect(self.zoom_out_image)
-                    zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
-                    zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
-                    zoom_layout.addWidget(zoom_out_btn)
+                zoom_frame = QFrame()
+                zoom_layout = QHBoxLayout(zoom_frame)
+                zoom_layout.setContentsMargins(0, 0, 0, 0)
+                zoom_layout.setSpacing(5)
 
-                    zoom_frame.setLayout(zoom_layout)
-                    image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
+                zoom_in_btn = QPushButton("+", image_container)
+                zoom_in_btn.setFixedSize(30, 30)
+                zoom_in_btn.clicked.connect(self.zoom_in_image)
+                zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
+                zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
+                zoom_layout.addWidget(zoom_in_btn)
 
-                    row_layout.addWidget(image_container)
-                    logging.debug(f"Image loaded and set as responsive for both")
-                except Exception as e:
-                    logging.error(f"Error loading image for both: {str(e)}")
-            elif content['type'] == 'video' and content.get('url'):
-                video_frame = QFrame()
-                video_layout = QVBoxLayout(video_frame)
-                try:
-                    self.media_player = QMediaPlayer()
-                    self.audio_output = QAudioOutput()
-                    self.media_player.setAudioOutput(self.audio_output)
-                    self.media_player.setSource(QUrl(content['url']))
-                    self.video_widget = QVideoWidget()
-                    self.video_widget.setMinimumSize(300, 200)
-                    self.media_player.setVideoOutput(self.video_widget)
-                    video_layout.addWidget(self.video_widget)
+                zoom_out_btn = QPushButton("-", image_container)
+                zoom_out_btn.setFixedSize(30, 30)
+                zoom_out_btn.clicked.connect(self.zoom_out_image)
+                zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
+                zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
+                zoom_layout.addWidget(zoom_out_btn)
 
-                    video_button_frame = QFrame()
-                    video_button_layout = QHBoxLayout(video_button_frame)
-                    self.audio_output.setMuted(True)
-                    unmute_button = QPushButton("Unmute")
-                    unmute_button.clicked.connect(self.toggle_mute)
-                    unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
-                    unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
-                    video_button_layout.addWidget(unmute_button)
-                    video_button_layout.addWidget(self.play_again_button)
-                    video_layout.addWidget(video_button_frame)
+                zoom_frame.setLayout(zoom_layout)
+                image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
 
-                    self.video_widget.setVisible(True)
-                    self.media_player.play()
-                    self.media_player.mediaStatusChanged.connect(self.handle_media_status)
-                    logging.debug(f"Video playing")
-                except Exception as e:
-                    logging.error(f"Error loading video: {str(e)}")
-                row_layout.addWidget(video_frame)
-            elif content.get('image_url'):
-                image_container = QWidget()
-                image_layout = QVBoxLayout(image_container)
-                image_layout.setContentsMargins(0, 0, 0, 0)
-                image_layout.setSpacing(0)
-                try:
-                    response = requests.get(content['image_url'], timeout=5)
-                    response.raise_for_status()
-                    image = QImage()
-                    image.loadFromData(response.content)
-                    if image.isNull():
-                        raise ValueError("Image is null or invalid")
+                logging.debug(f"Image loaded and set as responsive for both")
+            except Exception as e:
+                logging.error(f"Error loading image for both: {str(e)}")
+            row_layout.addWidget(image_container)
 
-                    self.scene = QGraphicsScene()
-                    pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
-                    self.graphics_view = QGraphicsView(image_container)
-                    self.graphics_view.setScene(self.scene)
-                    self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
-                    self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-                    self.graphics_view.setAlignment(Qt.AlignCenter)
-                    self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            media_layout.addWidget(row_widget)
 
-                    image_layout.addWidget(self.graphics_view)
+        elif has_video:
+            # Row: text left, video right
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(10)
 
-                    zoom_frame = QFrame()
-                    zoom_layout = QHBoxLayout(zoom_frame)
-                    zoom_layout.setContentsMargins(0, 0, 0, 0)
-                    zoom_layout.setSpacing(5)
+            row_layout.addWidget(self.message_display)
 
-                    zoom_in_btn = QPushButton("+", image_container)
-                    zoom_in_btn.setFixedSize(30, 30)
-                    zoom_in_btn.clicked.connect(self.zoom_in_image)
-                    zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
-                    zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
-                    zoom_layout.addWidget(zoom_in_btn)
+            video_frame = QFrame()
+            video_layout = QVBoxLayout(video_frame)
+            try:
+                self.media_player = QMediaPlayer()
+                self.audio_output = QAudioOutput()
+                self.media_player.setAudioOutput(self.audio_output)
+                self.media_player.setSource(QUrl(content['url']))
+                self.video_widget = QVideoWidget()
+                self.video_widget.setMinimumSize(300, 200)
+                self.media_player.setVideoOutput(self.video_widget)
+                video_layout.addWidget(self.video_widget)
 
-                    zoom_out_btn = QPushButton("-", image_container)
-                    zoom_out_btn.setFixedSize(30, 30)
-                    zoom_out_btn.clicked.connect(self.zoom_out_image)
-                    zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
-                    zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
-                    zoom_layout.addWidget(zoom_out_btn)
+                video_button_frame = QFrame()
+                video_button_layout = QHBoxLayout(video_button_frame)
+                self.audio_output.setMuted(True)
+                unmute_button = QPushButton("Unmute")
+                unmute_button.clicked.connect(self.toggle_mute)
+                unmute_button.enterEvent = lambda event: self.animate_button(unmute_button, True)
+                unmute_button.leaveEvent = lambda event: self.animate_button(unmute_button, False)
+                video_button_layout.addWidget(unmute_button)
 
-                    zoom_frame.setLayout(zoom_layout)
-                    image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
+                self.play_again_button = QPushButton("Play Again")
+                self.play_again_button.setEnabled(False)
+                self.play_again_button.clicked.connect(self.play_again)
+                self.play_again_button.enterEvent = lambda event: self.animate_button(self.play_again_button, True)
+                self.play_again_button.leaveEvent = lambda event: self.animate_button(self.play_again_button, False)
+                video_button_layout.addWidget(self.play_again_button)
 
-                    row_layout.addWidget(image_container)
-                    logging.debug(f"Image loaded and set as responsive")
-                except Exception as e:
-                    logging.error(f"Error loading image: {str(e)}")
+                video_layout.addWidget(video_button_frame)
 
-            row_layout.addStretch()  # Push media to the right if no image/video
-            main_layout.addWidget(row_widget)
-            self.media_frame.layout().addWidget(main_widget)
+                self.video_widget.setVisible(True)
+                self.media_player.play()
+                self.media_player.mediaStatusChanged.connect(self.handle_media_status)
+                logging.debug(f"Video playing")
+            except Exception as e:
+                logging.error(f"Error loading video: {str(e)}")
+            row_layout.addWidget(video_frame)
+
+            media_layout.addWidget(row_widget)
+
+        elif has_image:
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(10)
+            row_layout.addWidget(self.message_display)
+            image_container = QWidget()
+            image_layout = QVBoxLayout(image_container)
+            image_layout.setContentsMargins(0, 0, 0, 0)
+            image_layout.setSpacing(0)
+            try:
+                response = requests.get(content['image_url'], timeout=10)  # Increased timeout
+                response.raise_for_status()
+                image = QImage()
+                image.loadFromData(response.content)
+                if image.isNull():
+                    raise ValueError("Image is null or invalid")
+                self.scene = QGraphicsScene()
+                pix_item = self.scene.addPixmap(QPixmap.fromImage(image))
+                self.graphics_view = QGraphicsView(image_container)
+                self.graphics_view.setScene(self.scene)
+                self.graphics_view.setDragMode(QGraphicsView.ScrollHandDrag)
+                self.graphics_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+                self.graphics_view.setAlignment(Qt.AlignCenter)
+                self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                image_layout.addWidget(self.graphics_view)
+                zoom_frame = QFrame()
+                zoom_layout = QHBoxLayout(zoom_frame)
+                zoom_layout.setContentsMargins(0, 0, 0, 0)
+                zoom_layout.setSpacing(5)
+                zoom_in_btn = QPushButton("+", image_container)
+                zoom_in_btn.setFixedSize(30, 30)
+                zoom_in_btn.clicked.connect(self.zoom_in_image)
+                zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
+                zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
+                zoom_layout.addWidget(zoom_in_btn)
+                zoom_out_btn = QPushButton("-", image_container)
+                zoom_out_btn.setFixedSize(30, 30)
+                zoom_out_btn.clicked.connect(self.zoom_out_image)
+                zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
+                zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
+                zoom_layout.addWidget(zoom_out_btn)
+                zoom_frame.setLayout(zoom_layout)
+                image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
+                logging.debug(f"Image loaded for content {content['id']}")
+            except Exception as e:
+                logging.error(f"Error loading image for content {content['id']}: {str(e)}")
+                error_label = QLabel("Failed to load image")
+                error_label.setStyleSheet("color: #ff0000; font-size: 14px;")
+                image_layout.addWidget(error_label, alignment=Qt.AlignCenter)
+            row_layout.addWidget(image_container)
+            media_layout.addWidget(row_widget)
+
+        else:
+            # Only text: message full width
+            media_layout.addWidget(self.message_display)
 
         QTimer.singleShot(30000, lambda: self.record_view(content['id']))
         self.loading_bar.setVisible(False)
 
         self.processed_content_ids.add(content['id'])
         logging.debug(f"Marked content {content['id']} as processed")
-        self.update_scroll_area()
+        self.update_scroll_signal.emit()
         logging.debug(f"Content displayed, window visible: {self.isVisible()}, geometry: {self.geometry()}")
 
     def zoom_in_image(self):
@@ -901,7 +1034,7 @@ class StudentApp(QMainWindow):
                 formatted_time = "No time specified"
 
             viewed_duration = self.viewed_durations.get(content['id'], 0)
-            status_icon = '✔' if viewed_duration > 30 else '⏳'
+            status_icon = 'OK' if viewed_duration > 30 else 'Pending'
             status_color = '#28a745' if viewed_duration > 30 else '#ffc107'
             logging.debug(f"Content {content['id']}: viewed_duration={viewed_duration}, status_icon={status_icon}, status_color={status_color}")
 
@@ -938,11 +1071,15 @@ class StudentApp(QMainWindow):
 
     def record_view(self, content_id):
         """Record view with duration to server and update viewed_durations."""
-        # Calculate duration before sending to server
-        if self.view_start_time and content_id in self.viewed_durations:
+        # Calculate duration locally
+        duration = 0
+        if self.view_start_time:
             duration = (datetime.now() - self.view_start_time).total_seconds()
-            self.viewed_durations[content_id] = max(self.viewed_durations[content_id], duration)
-            logging.debug(f"Recording view for content {content_id} with duration {self.viewed_durations[content_id]} seconds")
+            self.viewed_durations[content_id] = max(self.viewed_durations.get(content_id, 0), duration)
+        else:
+            logging.warning(f"No view_start_time for content {content_id}, using existing duration")
+
+        logging.debug(f"Recording view for content {content_id} with duration {self.viewed_durations.get(content_id, 0)} seconds")
         try:
             response = requests.post(
                 f"{self.server_url}/record_view",
@@ -955,19 +1092,19 @@ class StudentApp(QMainWindow):
                 allow_redirects=True
             )
             response.raise_for_status()
-            logging.info(f"View recorded successfully for content_id {content_id}")
-            self.update_scroll_area()  # Update sidebar to reflect new duration
+            logging.info(f"View recorded successfully for content_id {content_id}, response: {response.text}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error recording view for content_id {content_id}: {str(e)}")
             QMessageBox.warning(self, "Warning", f"Failed to record view: {str(e)}")
+
+        # Update sidebar via signal
+        self.update_scroll_signal.emit()
 
     def start_reaction_animation(self, emoji):
         if emoji not in self.emoji_map:
             logging.error(f"No emoji defined for: {emoji}")
             return
-
         logging.debug(f"Starting raining reaction animation for emoji: {emoji}")
-
         overlay = QWidget(self)
         overlay.setGeometry(0, 0, self.width(), self.height())
         overlay.setStyleSheet("background-color: transparent;")
@@ -975,19 +1112,14 @@ class StudentApp(QMainWindow):
         overlay.setAttribute(Qt.WA_TranslucentBackground)
         overlay.raise_()
         overlay.show()
-        logging.debug(f"Overlay created, visible: {overlay.isVisible()}, geometry: {overlay.geometry()}")
-
         self.animation_active = True
-
-        QTimer.singleShot(5000, lambda: setattr(self, 'animation_active', False) or overlay.deleteLater() or logging.debug("Overlay deleted and animation stopped"))
-
+        QTimer.singleShot(5000, lambda: setattr(self, 'animation_active', False) or overlay.deleteLater() or logging.debug("Overlay deleted"))
         def spawn_emojis():
             if not self.animation_active or not overlay or not overlay.isVisible():
-                logging.debug("Stopping spawn_emojis: animation inactive or overlay not visible")
+                logging.debug("Stopping spawn_emojis")
                 return
-            num_emojis = max(10, self.width() // 50)
-            spacing = self.width() // num_emojis
-            logging.debug(f"Spawning {num_emojis} emojis, spacing: {spacing}")
+            num_emojis = min(5, self.width() // 100)  # Cap at 5 emojis
+            spacing = self.width() // max(1, num_emojis)
             for i in range(num_emojis):
                 label = QLabel(self.emoji_map[emoji], overlay)
                 label.setStyleSheet("background-color: transparent; font-size: 24px;")
@@ -995,8 +1127,6 @@ class StudentApp(QMainWindow):
                 start_x = i * spacing + randint(-20, 20)
                 label.move(start_x, -32)
                 label.show()
-                logging.debug(f"Emoji label created at x={start_x}, y=-32, visible: {label.isVisible()}")
-
                 anim = QPropertyAnimation(label, b"pos")
                 anim.setDuration(randint(1500, 2500))
                 anim.setStartValue(QPoint(label.x(), -32))
@@ -1004,7 +1134,6 @@ class StudentApp(QMainWindow):
                 anim.setEasingCurve(QEasingCurve.Linear)
                 anim.finished.connect(label.deleteLater)
                 anim.start()
-
                 opacity_effect = QGraphicsOpacityEffect(label)
                 label.setGraphicsEffect(opacity_effect)
                 opacity_anim = QPropertyAnimation(opacity_effect, b"opacity")
@@ -1013,23 +1142,7 @@ class StudentApp(QMainWindow):
                 opacity_anim.setEndValue(0.0)
                 opacity_anim.setEasingCurve(QEasingCurve.InQuad)
                 opacity_anim.start()
-
             QTimer.singleShot(200, spawn_emojis)
-
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        logging.debug(f"Window ensured visible for animation, visible: {self.isVisible()}, geometry: {self.geometry()}")
-
-        overlay.update()
-        self.update()
-
-        static_label = QLabel(self.emoji_map[emoji], overlay)
-        static_label.setStyleSheet("background-color: transparent; font-size: 24px;")
-        static_label.move(self.width() // 2, self.height() // 2)
-        static_label.show()
-        logging.debug(f"Static test emoji created at x={self.width() // 2}, y={self.height() // 2}, visible: {static_label.isVisible()}")
-
         spawn_emojis()
 
     def send_reaction(self, reaction, content_id):

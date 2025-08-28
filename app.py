@@ -13,6 +13,7 @@ import requests
 import pkg_resources
 from functools import wraps
 import json
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key'  # Change to a secure key in production
@@ -324,6 +325,116 @@ def get_employees():
     except Exception as e:
         logging.error(f"Error fetching employees: {str(e)}")
         return jsonify({"message": f"Error fetching employees: {str(e)}"}), 500
+
+@app.route('/upload_version', methods=['GET', 'POST'])
+@login_required
+def upload_version():
+    """Admin page to upload new app version (version.txt and app.exe)."""
+    if request.method == 'POST':
+        try:
+            logging.debug(f"Received upload_version data: {dict(request.form)}, files: {request.files}")
+            if 'version_file' not in request.files or 'exe_file' not in request.files:
+                logging.error("Missing version_file or exe_file")
+                return render_template('upload_version.html', error="Both version.txt and app.exe are required")
+
+            version_file = request.files['version_file']
+            exe_file = request.files['exe_file']
+
+            if not version_file.filename.endswith('.txt') or not exe_file.filename.endswith('.exe'):
+                logging.error("Invalid file formats. Must be version.txt and app.exe")
+                return render_template('upload_version.html', error="Invalid file formats. Must be version.txt and app.exe")
+
+            # Ensure updates bucket exists
+            try:
+                ensure_bucket('updates')
+            except Exception as e:
+                logging.error(f"Updates bucket creation failed: {str(e)}")
+                return render_template('upload_version.html', error=f"Failed to create updates bucket: {str(e)}")
+
+            # Save files temporarily
+            version_id = str(uuid.uuid4())
+            exe_id = str(uuid.uuid4())
+            version_path = os.path.join(tempfile.gettempdir(), f"{version_id}.txt")
+            exe_path = os.path.join(tempfile.gettempdir(), f"{exe_id}.exe")
+            version_file.save(version_path)
+            exe_file.save(exe_path)
+
+            try:
+                # Upload version.txt
+                retries = 3
+                for attempt in range(retries):
+                    try:
+                        with open(version_path, 'rb') as f:
+                            supabase.storage.from_('updates').upload(f"public/version.txt", f, {
+                                'contentType': 'text/plain'
+                            })
+                        if not verify_file('updates', f"public/version.txt"):
+                            raise Exception("Version file upload verification failed")
+                        logging.info("Version file uploaded successfully")
+                        break
+                    except Exception as e:
+                        logging.error(f"Version file upload attempt {attempt + 1} failed: {str(e)}")
+                        if attempt == retries - 1:
+                            raise Exception(f"Failed to upload version.txt after {retries} attempts: {str(e)}")
+                        time.sleep(2)
+
+                # Upload app.exe
+                for attempt in range(retries):
+                    try:
+                        with open(exe_path, 'rb') as f:
+                            supabase.storage.from_('updates').upload(f"public/app.exe", f, {
+                                'contentType': 'application/octet-stream'
+                            })
+                        if not verify_file('updates', f"public/app.exe"):
+                            raise Exception("EXE file upload verification failed")
+                        logging.info("EXE file uploaded successfully")
+                        break
+                    except Exception as e:
+                        logging.error(f"EXE file upload attempt {attempt + 1} failed: {str(e)}")
+                        if attempt == retries - 1:
+                            raise Exception(f"Failed to upload app.exe after {retries} attempts: {str(e)}")
+                        time.sleep(2)
+
+                return render_template('upload_version.html', success="Version files uploaded successfully")
+            finally:
+                # Clean up temporary files
+                if os.path.exists(version_path):
+                    os.remove(version_path)
+                if os.path.exists(exe_path):
+                    os.remove(exe_path)
+        except Exception as e:
+            logging.error(f"Error uploading version files: {str(e)}")
+            return render_template('upload_version.html', error=f"Error uploading files: {str(e)}")
+    return render_template('upload_version.html')
+
+@app.route('/updates/version', methods=['GET'])
+def get_version():
+    """Serve the latest version number."""
+    try:
+        version_url = f"{SUPABASE_URL}/storage/v1/object/public/updates/public/version.txt"
+        response = requests.get(version_url, headers={"Authorization": f"Bearer {SUPABASE_KEY}"})
+        response.raise_for_status()
+        logging.info("Served version.txt")
+        return response.text
+    except Exception as e:
+        logging.error(f"Error serving version.txt: {str(e)}")
+        return jsonify({"message": f"Error serving version: {str(e)}"}), 500
+
+@app.route('/updates/app', methods=['GET'])
+def get_app():
+    """Serve the latest app.exe."""
+    try:
+        exe_url = f"{SUPABASE_URL}/storage/v1/object/public/updates/public/app.exe"
+        response = requests.get(exe_url, headers={"Authorization": f"Bearer {SUPABASE_KEY}"}, stream=True)
+        response.raise_for_status()
+        return app.response_class(
+            response.iter_content(chunk_size=8192),
+            mimetype='application/octet-stream',
+            headers={'Content-Disposition': 'attachment; filename=app.exe'}
+        )
+    except Exception as e:
+        logging.error(f"Error serving app.exe: {str(e)}")
+        return jsonify({"message": f"Error serving app: {str(e)}"}), 500
     
 @app.route('/view_reactions/<content_id>')
 @login_required
