@@ -409,17 +409,33 @@ def upload_version():
 
 @app.route('/updates/version', methods=['GET'])
 def get_version():
-    """Serve the latest version number."""
+    """Serve the latest version number from Supabase storage."""
     try:
-        version_url = f"{SUPABASE_URL}/storage/v1/object/public/updates/public/version.txt"
-        response = requests.get(version_url, headers={"Authorization": f"Bearer {SUPABASE_KEY}"})
-        response.raise_for_status()
-        logging.info("Served version.txt")
-        return response.text
-    except Exception as e:
-        logging.error(f"Error serving version.txt: {str(e)}")
-        return jsonify({"message": f"Error serving version: {str(e)}"}), 500
+        # Check if the version.txt file exists in the updates bucket
+        bucket_name = 'updates'
+        file_path = 'public/version.txt'
+        if not verify_file(bucket_name, file_path):
+            logging.error(f"Version file not found: {bucket_name}/{file_path}")
+            return jsonify({"message": "Version file not found", "version": "unknown"}), 404
 
+        version_url = f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{file_path}"
+        response = requests.get(version_url, timeout=5)
+        response.raise_for_status()
+
+        version_text = response.text.strip()
+        if not version_text:
+            logging.error("Version file is empty")
+            return jsonify({"message": "Version file is empty", "version": "unknown"}), 404
+
+        logging.info(f"Served version: {version_text}")
+        return version_text, 200, {'Content-Type': 'text/plain'}
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching version.txt from Supabase: {str(e)}, URL: {version_url}")
+        return jsonify({"message": f"Error fetching version: {str(e)}", "version": "unknown"}), 500
+    except Exception as e:
+        logging.error(f"Unexpected error serving version.txt: {str(e)}")
+        return jsonify({"message": f"Unexpected error serving version: {str(e)}", "version": "unknown"}), 500
+    
 @app.route('/updates/app', methods=['GET'])
 def get_app():
     """Serve the latest app.exe."""
@@ -1024,32 +1040,60 @@ def register_device():
 
 @app.route('/update_status', methods=['POST'])
 def update_status():
+    """Update the status of an employee's device in the employee_devices table."""
     try:
         data = request.json
         logging.debug(f"Received update_status data: {data}")
+        
+        # Validate required fields
+        required_fields = ['employee_id', 'status', 'app_running']
+        if not all(field in data for field in required_fields):
+            missing = [field for field in required_fields if field not in data]
+            logging.error(f"Missing required fields: {missing}")
+            return jsonify({"message": f"Missing required fields: {', '.join(missing)}"}), 400
+
         employee_id = data['employee_id']
         status = data['status']
         app_running = data['app_running']
         ip = data.get('ip')
         device_type = data.get('device_type')
-        hostname = data.get('hostname')
+        hostname = data.get('hostname', 'unknown-host')
         email = data.get('email')
-        if not employee_id:
-            logging.error("Missing employee_id")
-            return jsonify({"message": "Missing employee_id"}), 400
+
+        # Validate data types and values
+        if not isinstance(employee_id, str) or not employee_id.strip():
+            logging.error("Invalid employee_id: must be a non-empty string")
+            return jsonify({"message": "Invalid employee_id: must be a non-empty string"}), 400
+        if status not in ['online', 'offline']:
+            logging.error(f"Invalid status: {status}, must be 'online' or 'offline'")
+            return jsonify({"message": "Invalid status: must be 'online' or 'offline'"}), 400
+        if not isinstance(app_running, bool):
+            logging.error(f"Invalid app_running: {app_running}, must be a boolean")
+            return jsonify({"message": "Invalid app_running: must be a boolean"}), 400
+        if ip and not isinstance(ip, str):
+            logging.error(f"Invalid ip: {ip}, must be a string")
+            return jsonify({"message": "Invalid ip: must be a string"}), 400
+        if device_type and not isinstance(device_type, str):
+            logging.error(f"Invalid device_type: {device_type}, must be a string")
+            return jsonify({"message": "Invalid device_type: must be a string"}), 400
+        if email and (not isinstance(email, str) or '@' not in email):
+            logging.error(f"Invalid email: {email}")
+            return jsonify({"message": "Invalid email format"}), 400
+
+        # Check if employee exists
         employee = supabase.table('employees').select('id').eq('id', employee_id).execute().data
         if not employee:
             logging.error(f"Employee ID {employee_id} not found")
             return jsonify({"message": f"Employee ID {employee_id} not found in employees table"}), 400
-        # Fetch existing device data to preserve hostname if not provided
-        existing_device = supabase.table('employee_devices').select('hostname').eq('employee_id', employee_id).execute().data
-        hostname = hostname or (existing_device[0]['hostname'] if existing_device else "unknown-host")
+
+        # Fetch existing device data to preserve fields
+        existing_device = supabase.table('employee_devices').select('*').eq('employee_id', employee_id).execute().data
         device_data = {
             "employee_id": employee_id,
             "status": status,
-            "last_seen": datetime.now(timezone.utc).isoformat(),
             "app_running": app_running,
-            "hostname": hostname
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "hostname": hostname,
         }
         if ip:
             device_data["ip"] = ip
@@ -1057,16 +1101,32 @@ def update_status():
             device_data["device_type"] = device_type
         if email:
             device_data["email"] = email
-        supabase.table('employee_devices').upsert(device_data).execute()
-        logging.info(f"Status updated for employee: {employee_id}, hostname: {hostname}, email: {email}")
+
+        # Preserve existing fields if they exist
+        if existing_device:
+            existing = existing_device[0]
+            device_data["hostname"] = hostname or existing.get('hostname', 'unknown-host')
+            device_data["ip"] = ip or existing.get('ip')
+            device_data["device_type"] = device_type or existing.get('device_type')
+            device_data["email"] = email or existing.get('email')
+            device_data["active_status"] = existing.get('active_status', False)
+
+        # Perform upsert
+        try:
+            supabase.table('employee_devices').upsert(device_data, on_conflict=['employee_id']).execute()
+        except APIError as db_error:
+            logging.error(f"Supabase upsert failed for employee_id {employee_id}: {str(db_error)}")
+            return jsonify({"message": f"Database error updating status: {str(db_error)}"}), 500
+
+        logging.info(f"Status updated for employee: {employee_id}, hostname: {device_data['hostname']}, email: {device_data.get('email')}")
         return jsonify({"message": "Status updated"})
     except APIError as e:
-        logging.error(f"Error updating status: {str(e)}")
-        return jsonify({"message": f"Error updating status: {str(e)}"}), 500
+        logging.error(f"Supabase API error updating status: {str(e)}")
+        return jsonify({"message": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        logging.error(f"Unexpected error updating status: {str(e)}")
+        logging.error(f"Unexpected error updating status: {str(e)}, data: {data}")
         return jsonify({"message": f"Unexpected error updating status: {str(e)}"}), 500
-    
+        
 @app.route('/set_message_delay', methods=['POST'])
 def set_message_delay():
     try:
