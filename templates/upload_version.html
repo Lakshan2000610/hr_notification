@@ -3,23 +3,18 @@
 <div class="container mt-4">
     <h2>Upload New App Version</h2>
     
-    <!-- Display Current Version and Download Link -->
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5 class="card-title">Current Application Version</h5>
-            {% if current_version %}
-                <p class="card-text">Version: {{ current_version }}</p>
-                <a href="{{ url_for('get_app') }}" class="btn btn-outline-primary" download="app.exe">
-                    <i class="bi bi-download"></i> Download Current app.exe
-                </a>
-            {% else %}
-                <p class="card-text text-muted">Version: Unknown (Failed to fetch version)</p>
-                <p class="card-text text-danger">Unable to provide download link.</p>
-            {% endif %}
-        </div>
+    <!-- Display current version and download link -->
+    <div class="mb-4">
+        <h4>Current Version</h4>
+        {% if current_version %}
+            <p>Current Version: {{ current_version }}</p>
+            <a href="{{ url_for('get_app') }}" class="btn btn-secondary" download>Download Current app.exe</a>
+        {% else %}
+            <p>No version file found.</p>
+        {% endif %}
     </div>
 
-    <!-- Error/Success Messages -->
+    <!-- Error and success messages -->
     {% if error %}
     <div class="alert alert-danger" role="alert">
         {{ error }}
@@ -31,7 +26,7 @@
     </div>
     {% endif %}
 
-    <!-- Upload Form -->
+    <!-- Upload form -->
     <form method="post" enctype="multipart/form-data">
         <div class="mb-3">
             <label for="version_file" class="form-label">Version File (version.txt)</label>

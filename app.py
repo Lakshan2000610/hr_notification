@@ -30,6 +30,12 @@ CORTEX_API_URL = os.getenv("CORTEX_API_URL", "https://api-acorntravels.xdr.sg.pa
 CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID", "3")  # Replace with your Cortex XDR API Key ID
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY", "wGnOGUN5NLCdmNWhJAFzkYVBoGXGNxLLt1N5LOFdr9xI6ZS9VzxIeqZSG1EO0x3MtqtEI51h4h4SbL6TcSKcOPL07YbR4zakiT3rwl8ytwboBSyJZI3nY5HYH5gJgvo7")  # Replace with your Cortex XDR API Key
 
+# Local directory for uploads
+UPLOAD_DIR = "/var/www/hr_notification/uploads"
+
+# Ensure upload directory exists
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
 
 
 # Validate Supabase URL
@@ -335,123 +341,95 @@ def upload_version():
             logging.debug(f"Received upload_version data: {dict(request.form)}, files: {request.files}")
             if 'version_file' not in request.files or 'exe_file' not in request.files:
                 logging.error("Missing version_file or exe_file")
-                return render_template('upload_version.html', error="Both version.txt and app.exe are required")
+                return render_template('upload_version.html', error="Both version.txt and app.exe are required", current_version=None)
 
             version_file = request.files['version_file']
             exe_file = request.files['exe_file']
 
             if not version_file.filename.endswith('.txt') or not exe_file.filename.endswith('.exe'):
                 logging.error("Invalid file formats. Must be version.txt and app.exe")
-                return render_template('upload_version.html', error="Invalid file formats. Must be version.txt and app.exe")
+                return render_template('upload_version.html', error="Invalid file formats. Must be version.txt and app.exe", current_version=None)
 
-            # Ensure updates bucket exists
+            # Save files to local directory
+            version_path = os.path.join(UPLOAD_DIR, "version.txt")
+            exe_path = os.path.join(UPLOAD_DIR, "app.exe")
+
             try:
-                ensure_bucket('updates')
+                # Save version.txt
+                version_file.save(version_path)
+                if not os.path.exists(version_path):
+                    raise Exception("Failed to save version.txt to local directory")
+                logging.info("Version file saved successfully to %s", version_path)
+
+                # Save app.exe
+                exe_file.save(exe_path)
+                if not os.path.exists(exe_path):
+                    raise Exception("Failed to save app.exe to local directory")
+                logging.info("EXE file saved successfully to %s", exe_path)
+
+                # Read the new version for display
+                with open(version_path, 'r') as f:
+                    new_version = f.read().strip()
+                return render_template('upload_version.html', success="Version files uploaded successfully", current_version=new_version)
             except Exception as e:
-                logging.error(f"Updates bucket creation failed: {str(e)}")
-                return render_template('upload_version.html', error=f"Failed to create updates bucket: {str(e)}")
-
-            # Save files temporarily
-            version_id = str(uuid.uuid4())
-            exe_id = str(uuid.uuid4())
-            version_path = os.path.join(tempfile.gettempdir(), f"{version_id}.txt")
-            exe_path = os.path.join(tempfile.gettempdir(), f"{exe_id}.exe")
-            version_file.save(version_path)
-            exe_file.save(exe_path)
-
-            try:
-                # Upload version.txt
-                retries = 3
-                for attempt in range(retries):
-                    try:
-                        with open(version_path, 'rb') as f:
-                            supabase.storage.from_('updates').upload(f"public/version.txt", f, {
-                                'contentType': 'text/plain'
-                            })
-                        if not verify_file('updates', f"public/version.txt"):
-                            raise Exception("Version file upload verification failed")
-                        logging.info("Version file uploaded successfully")
-                        break
-                    except Exception as e:
-                        logging.error(f"Version file upload attempt {attempt + 1} failed: {str(e)}")
-                        if attempt == retries - 1:
-                            raise Exception(f"Failed to upload version.txt after {retries} attempts: {str(e)}")
-                        time.sleep(2)
-
-                # Upload app.exe
-                for attempt in range(retries):
-                    try:
-                        with open(exe_path, 'rb') as f:
-                            supabase.storage.from_('updates').upload(f"public/app.exe", f, {
-                                'contentType': 'application/octet-stream'
-                            })
-                        if not verify_file('updates', f"public/app.exe"):
-                            raise Exception("EXE file upload verification failed")
-                        logging.info("EXE file uploaded successfully")
-                        break
-                    except Exception as e:
-                        logging.error(f"EXE file upload attempt {attempt + 1} failed: {str(e)}")
-                        if attempt == retries - 1:
-                            raise Exception(f"Failed to upload app.exe after {retries} attempts: {str(e)}")
-                        time.sleep(2)
-
-                return render_template('upload_version.html', success="Version files uploaded successfully")
-            finally:
-                # Clean up temporary files
-                if os.path.exists(version_path):
-                    os.remove(version_path)
-                if os.path.exists(exe_path):
-                    os.remove(exe_path)
+                logging.error(f"Error saving files: {str(e)}")
+                return render_template('upload_version.html', error=f"Error saving files: {str(e)}", current_version=None)
         except Exception as e:
             logging.error(f"Error uploading version files: {str(e)}")
-            return render_template('upload_version.html', error=f"Error uploading files: {str(e)}")
-    return render_template('upload_version.html')
+            return render_template('upload_version.html', error=f"Error uploading files: {str(e)}", current_version=None)
+    
+    # GET request: Display current version
+    try:
+        version_path = os.path.join(UPLOAD_DIR, "version.txt")
+        current_version = None
+        if os.path.exists(version_path):
+            with open(version_path, 'r') as f:
+                current_version = f.read().strip()
+        return render_template('upload_version.html', current_version=current_version)
+    except Exception as e:
+        logging.error(f"Error reading version.txt: {str(e)}")
+        return render_template('upload_version.html', error=f"Error reading current version: {str(e)}", current_version=None)
+
 
 @app.route('/updates/version', methods=['GET'])
 def get_version():
-    """Serve the latest version number from Supabase storage."""
+    """Serve the latest version number from local directory."""
     try:
-        # Check if the version.txt file exists in the updates bucket
-        bucket_name = 'updates'
-        file_path = 'public/version.txt'
-        if not verify_file(bucket_name, file_path):
-            logging.error(f"Version file not found: {bucket_name}/{file_path}")
+        version_path = os.path.join(UPLOAD_DIR, "version.txt")
+        if not os.path.exists(version_path):
+            logging.error(f"Version file not found: {version_path}")
             return jsonify({"message": "Version file not found", "version": "unknown"}), 404
 
-        version_url = f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{file_path}"
-        response = requests.get(version_url, timeout=5)
-        response.raise_for_status()
-
-        version_text = response.text.strip()
-        if not version_text:
-            logging.error("Version file is empty")
-            return jsonify({"message": "Version file is empty", "version": "unknown"}), 404
+        with open(version_path, 'r') as f:
+            version_text = f.read().strip()
+            if not version_text:
+                logging.error("Version file is empty")
+                return jsonify({"message": "Version file is empty", "version": "unknown"}), 404
 
         logging.info(f"Served version: {version_text}")
         return version_text, 200, {'Content-Type': 'text/plain'}
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching version.txt from Supabase: {str(e)}, URL: {version_url}")
-        return jsonify({"message": f"Error fetching version: {str(e)}", "version": "unknown"}), 500
     except Exception as e:
-        logging.error(f"Unexpected error serving version.txt: {str(e)}")
-        return jsonify({"message": f"Unexpected error serving version: {str(e)}", "version": "unknown"}), 500
-    
+        logging.error(f"Error serving version.txt: {str(e)}")
+        return jsonify({"message": f"Error serving version: {str(e)}", "version": "unknown"}), 500
+
 @app.route('/updates/app', methods=['GET'])
 def get_app():
-    """Serve the latest app.exe."""
+    """Serve the latest app.exe from local directory."""
     try:
-        exe_url = f"{SUPABASE_URL}/storage/v1/object/public/updates/public/app.exe"
-        response = requests.get(exe_url, headers={"Authorization": f"Bearer {SUPABASE_KEY}"}, stream=True)
-        response.raise_for_status()
+        exe_path = os.path.join(UPLOAD_DIR, "app.exe")
+        if not os.path.exists(exe_path):
+            logging.error(f"EXE file not found: {exe_path}")
+            return jsonify({"message": "EXE file not found"}), 404
+
         return app.response_class(
-            response.iter_content(chunk_size=8192),
+            open(exe_path, 'rb'),
             mimetype='application/octet-stream',
             headers={'Content-Disposition': 'attachment; filename=app.exe'}
         )
     except Exception as e:
         logging.error(f"Error serving app.exe: {str(e)}")
         return jsonify({"message": f"Error serving app: {str(e)}"}), 500
-    
+        
 @app.route('/view_reactions/<content_id>')
 @login_required
 def view_reactions(content_id):
