@@ -643,24 +643,31 @@ def monitor_devices():
         # Create lookup maps
         cortex_hostname_map = {}
         cortex_email_map = {}
+        cortex_ip_map = {}
         for endpoint in cortex_endpoints:
             hostname = endpoint.get('endpoint_name', '').lower().strip()
             email = endpoint.get('email', '').lower().strip()
+            ip = endpoint.get('ip','')
             if hostname:
                 cortex_hostname_map[hostname] = endpoint
             if email:
                 cortex_email_map[email] = endpoint
+            if ip:
+                cortex_ip_map[ip] = endpoint
         logging.debug(f"Cortex hostname map keys: {list(cortex_hostname_map.keys())}")
         logging.debug(f"Cortex email map keys: {list(cortex_email_map.keys())}")
+        logging.debug(f"Cortex ip map keys: {list(cortex_ip_map.keys())}")
 
         # Process devices with verification
         processed_devices = []
         for device in devices:
             hostname = (device.get('hostname') or '').lower().strip()
             email = (device.get('email') or '').lower().strip()
+            ip = (device.get('ip'or''))
 
             is_hostname_valid = bool(hostname and hostname in cortex_hostname_map)
             is_email_valid = bool(email and email in cortex_email_map)
+            is_ip_valid = bool(ip and ip in cortex_ip_map)
 
             processed_devices.append({
                 'employee_id': device['employee_id'],
@@ -673,7 +680,8 @@ def monitor_devices():
                 'last_seen': device.get('last_seen', 'N/A'),
                 'app_running': device.get('app_running'),
                 'is_hostname_valid': is_hostname_valid,
-                'is_email_valid': is_email_valid
+                'is_email_valid': is_email_valid,
+                'cortex_ip_map': is_ip_valid
             })
 
         # Split devices
@@ -1220,23 +1228,24 @@ def record_reaction():
             logging.error(f"Invalid reaction type: {reaction}")
             return jsonify({"message": "Invalid reaction type"}), 400
 
-        try:
-            supabase.table('reactions').insert({
-                "id": str(uuid.uuid4()),
-                "content_id": content_id,
-                "employee_id": employee_id,
+        # Check if a reaction already exists for this content_id and employee_id
+        existing_reaction = supabase.table('reactions')\
+            .select('id', 'reaction', 'timestamp')\
+            .eq('content_id', content_id)\
+            .eq('employee_id', employee_id)\
+            .execute().data
+
+        if existing_reaction:
+            # Update the existing reaction
+            reaction_id = existing_reaction[0]['id']
+            supabase.table('reactions').update({
                 "reaction": reaction,
                 "timestamp": datetime.now(timezone.utc).isoformat()
-            }).execute()
-        except APIError as e:
-            if "relation \"reactions\" does not exist" in str(e):
-                supabase.table('reactions').create({
-                    "id": "uuid",
-                    "content_id": "text",
-                    "employee_id": "text",
-                    "reaction": "text",
-                    "timestamp": "timestamptz"
-                }).execute()
+            }).eq('id', reaction_id).execute()
+            logging.info(f"Reaction updated: {reaction} for content_id {content_id}, employee_id {employee_id}")
+        else:
+            # Insert a new reaction if none exists
+            try:
                 supabase.table('reactions').insert({
                     "id": str(uuid.uuid4()),
                     "content_id": content_id,
@@ -1244,10 +1253,26 @@ def record_reaction():
                     "reaction": reaction,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }).execute()
-            else:
-                raise
-        
-        logging.info(f"Reaction recorded: {reaction} for content_id {content_id}, employee_id {employee_id}")
+            except APIError as e:
+                if "relation \"reactions\" does not exist" in str(e):
+                    supabase.table('reactions').create({
+                        "id": "uuid",
+                        "content_id": "text",
+                        "employee_id": "text",
+                        "reaction": "text",
+                        "timestamp": "timestamptz"
+                    }).execute()
+                    supabase.table('reactions').insert({
+                        "id": str(uuid.uuid4()),
+                        "content_id": content_id,
+                        "employee_id": employee_id,
+                        "reaction": reaction,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }).execute()
+                else:
+                    raise
+            logging.info(f"Reaction recorded: {reaction} for content_id {content_id}, employee_id {employee_id}")
+
         return jsonify({"message": "Reaction recorded successfully"})
     except APIError as e:
         logging.error(f"Supabase API error recording reaction: {str(e)}")

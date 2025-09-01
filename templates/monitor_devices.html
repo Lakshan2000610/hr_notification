@@ -12,7 +12,7 @@
     <!-- Table for inactive devices -->
     <h2>Inactive Devices</h2>
     <div class="mb-3">
-        <button id="allActiveInactive" class="btn btn-success btn-sm">All Active</button>
+        <button id="allActiveInactive" class="btn btn-success btn-sm">Activate All</button>
     </div>
     <div class="table-responsive">
         <table class="table table-striped">
@@ -42,16 +42,16 @@
                     <td>{{ 'Yes' if device.app_running else 'No' }}</td>
                     <td>{{ device.device_type | default('N/A') }}</td>
                     <td>
-                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined %}
+                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined and device.is_ip_valid is defined %}
                         <span 
                             data-bs-toggle="tooltip" 
                             data-bs-placement="top" 
-                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}"
-                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid else 'red' }}'; cursor: pointer;">
-                            {{ '✔' if device.is_hostname_valid and device.is_email_valid else '✖' }}
+                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}, IP: {{ 'Matched' if device.is_ip_valid else 'Not Matched' }}"
+                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid and device.is_ip_valid else 'red' }}'; cursor: pointer;">
+                            {{ '✔' if device.is_hostname_valid and device.is_email_valid and device.is_ip_valid else '✖' }}
                         </span>
                         {% else %}
-                        <span style="color: gray;">N/A</span>
+                        <span style="color: gray;" data-bs-toggle="tooltip" data-bs-placement="top" title="Verification data incomplete">N/A</span>
                         {% endif %}
                     </td>
                     <td>
@@ -80,7 +80,7 @@
     <!-- Table for active devices -->
     <h2>Active Devices</h2>
     <div class="mb-3">
-        <button id="allDeactiveActive" class="btn btn-danger btn-sm">All Deactive</button>
+        <button id="allDeactiveActive" class="btn btn-danger btn-sm">Deactivate All</button>
     </div>
     <div class="table-responsive">
         <table class="table table-striped">
@@ -110,20 +110,20 @@
                     <td>{{ 'Yes' if device.app_running else 'No' }}</td>
                     <td>{{ device.device_type | default('N/A') }}</td>
                     <td>
-                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined %}
+                        {% if device.is_hostname_valid is defined and device.is_email_valid is defined and device.is_ip_valid is defined %}
                         <span 
                             data-bs-toggle="tooltip" 
                             data-bs-placement="top" 
-                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}"
-                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid else 'red' }}'; cursor: pointer;">
-                            {{ '✔' if device.is_hostname_valid and device.is_email_valid else '✖' }}
+                            title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}, IP: {{ 'Matched' if device.is_ip_valid else 'Not Matched' }}"
+                            style="color: '{{ 'green' if device.is_hostname_valid and device.is_email_valid and device.is_ip_valid else 'red' }}'; cursor: pointer;">
+                            {{ '✔' if device.is_hostname_valid and device.is_email_valid and device.is_ip_valid else '✖' }}
                         </span>
                         {% else %}
-                        <span style="color: gray;">N/A</span>
+                        <span style="color: gray;" data-bs-toggle="tooltip" data-bs-placement="top" title="Verification data incomplete">N/A</span>
                         {% endif %}
                     </td>
                     <td>
-                        <button class="btn btn-danger btn-sm" onclick="updateDeviceStatus('{{ device.employee_id }}', false)">Deactive</button>
+                        <button class="btn btn-danger btn-sm" onclick="updateDeviceStatus('{{ device.employee_id }}', false)">Deactivate</button>
                     </td>
                 </tr>
                 {% else %}
@@ -150,8 +150,18 @@
     let inactivePage = 1;
     let activePage = 1;
     const pageSize = 10;
-    const inactiveRows = '{{ inactive_devices | tojson }}';
-    const activeRows = '{{ active_devices | tojson }}';
+    let inactiveRows = [];
+    let activeRows = [];
+
+    // Parse JSON data with error handling
+    try {
+        inactiveRows = JSON.parse('{{ inactive_devices | tojson | safe }}');
+        activeRows = JSON.parse('{{ active_devices | tojson | safe }}');
+    } catch (e) {
+        console.error('Error parsing device data:', e);
+        inactiveRows = [];
+        activeRows = [];
+    }
 
     function updateTable(tableType) {
         const table = document.getElementById(`${tableType}DeviceTable`);
@@ -160,12 +170,12 @@
         const nextButton = document.getElementById(`next${tableType.charAt(0).toUpperCase() + tableType.slice(1)}`);
         const rows = tableType === 'inactive' ? inactiveRows : activeRows;
         const currentPage = tableType === 'inactive' ? inactivePage : activePage;
-        const maxRows = rows.length;
 
+        const maxRows = Array.isArray(rows) ? rows.length : 0;
+        const totalPages = Math.ceil(maxRows / pageSize) || 1;
         const startIdx = (currentPage - 1) * pageSize;
         const endIdx = Math.min(startIdx + pageSize, maxRows);
 
-        const totalPages = Math.ceil(maxRows / pageSize);
         pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
         prevButton.disabled = currentPage === 1;
         nextButton.disabled = currentPage === totalPages;
@@ -173,7 +183,11 @@
         // Update row visibility
         const tableRows = table.querySelectorAll('tr');
         tableRows.forEach((row, index) => {
-            row.style.display = (index >= startIdx && index < endIdx) ? '' : 'none';
+            if (maxRows === 0 && index === 0) {
+                row.style.display = ''; // Show "No devices found" row
+            } else {
+                row.style.display = (index >= startIdx && index < endIdx) ? '' : 'none';
+            }
         });
 
         // Initialize Bootstrap tooltips
@@ -186,7 +200,7 @@
         const currentPage = tableType === 'inactive' ? inactivePage : activePage;
         let newPage = currentPage + delta;
         const totalRows = tableType === 'inactive' ? inactiveRows.length : activeRows.length;
-        const totalPages = Math.ceil(totalRows / pageSize);
+        const totalPages = Math.ceil(totalRows / pageSize) || 1;
 
         if (newPage < 1 || newPage > totalPages) return;
 
