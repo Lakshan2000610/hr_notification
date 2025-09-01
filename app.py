@@ -623,7 +623,7 @@ def monitor_devices():
             "request_data": {
                 "filters": [],
                 "search_from": 0,
-                "search_to": 100,  # adjust as needed
+                "search_to": 100,  # Adjust as needed
                 "sort": {"field": "last_seen", "keyword": "desc"}
             }
         }
@@ -647,7 +647,9 @@ def monitor_devices():
         for endpoint in cortex_endpoints:
             hostname = endpoint.get('endpoint_name', '').lower().strip()
             email = endpoint.get('email', '').lower().strip()
-            ip = endpoint.get('ip','')
+            ip = endpoint.get('ip', '')  # Handle single IP or list as string
+            if isinstance(ip, list):
+                ip = ip[0] if ip else ''  # Use first IP if list
             if hostname:
                 cortex_hostname_map[hostname] = endpoint
             if email:
@@ -663,7 +665,7 @@ def monitor_devices():
         for device in devices:
             hostname = (device.get('hostname') or '').lower().strip()
             email = (device.get('email') or '').lower().strip()
-            ip = (device.get('ip'or''))
+            ip = device.get('ip', '')
 
             is_hostname_valid = bool(hostname and hostname in cortex_hostname_map)
             is_email_valid = bool(email and email in cortex_email_map)
@@ -681,13 +683,15 @@ def monitor_devices():
                 'app_running': device.get('app_running'),
                 'is_hostname_valid': is_hostname_valid,
                 'is_email_valid': is_email_valid,
-                'cortex_ip_map': is_ip_valid
+                'is_ip_valid': is_ip_valid  # Fixed: Correct key name
             })
 
         # Split devices
         active_devices = [d for d in processed_devices if d['active_status']]
         inactive_devices = [d for d in processed_devices if not d['active_status']]
         logging.info(f"Processed {len(active_devices)} active and {len(inactive_devices)} inactive devices")
+        logging.debug(f"Active devices: {active_devices}")
+        logging.debug(f"Inactive devices: {inactive_devices}")
 
         return render_template(
             'monitor_devices.html',
