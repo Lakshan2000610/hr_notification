@@ -9,73 +9,88 @@
 {% endif %}
 
 <div class="dashboard-stats">
-    <div class="stat-box">
+    <div class="stat-box stat-box-uniform">
         <h3>Registered Employees</h3>
-        <p>{{ employee_count }}</p>
+        <p id="employeeCount">{{ employee_count }}</p>
     </div>
-    <div class="stat-box">
+    <div class="stat-box stat-box-uniform">
         <h3>Active Devices</h3>
-        <p>{{ active_devices }}</p>
+        <p id="activeDeviceCount">{{ active_devices }}</p>
     </div>
     <div class="stat-box">
-        <h3>Scheduled Content</h3>
-        <p>{{ pending_content }}</p>
-    </div>
-    <div class="stat-box">
-        <h3>Send now Content</h3>
-        <p>{{ recent_notifications }}</p>
+        <h3>Total Sent Messages</h3>
+        <div>
+            <select id="timeFilter" onchange="fetchSentMessages()">
+                <option value="day">Last 24 Hours</option>
+                <option value="month">Last 30 Days</option>
+            </select>
+            <canvas id="sentMessagesChart"></canvas>
+        </div>
     </div>
 </div>
 
-<h2>Content Reactions and Feedback</h2>
-{% if content_stats %}
-<table class="content-table">
-    <thead>
-        <tr>
-            <th>Message</th>
-            <th>Likes</th>
-            <th>Unlikes</th>
-            <th>Hearts</th>
-            <th>Cries</th>
-            <th>Feedback</th>
-            <th>View Count</th>
-            <th>Action</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for stat in paginated_stats %}
-        <tr>
-            <td>{{ stat.title }}</td>
-            <td>{{ stat.like_count }}</td>
-            <td>{{ stat.unlike_count }}</td>
-            <td>{{ stat.heart_count }}</td>
-            <td>{{ stat.cry_count }}</td>
-            <td>{{ stat.feedback_count }}</td>
-            <td>{{ stat.view_count }}</td>
-            <td><a href="{{ url_for('view_reactions', content_id=stat.id) }}" class="view-btn">View</a></td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="dashboard-layout">
+    <div class="department-section">
+        <h2>Online Users by Department</h2>
+        <canvas id="departmentPieChart"></canvas>
+        <ul class="department-list">
+            {% for dept, count, percent in department_data %}
+            <li>{{ dept }}: {{ count }} ({{ percent }}%)</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class="content-section">
+        <h2>Content Reactions and Feedback</h2>
+        {% if content_stats %}
+        <table class="content-table">
+            <thead>
+                <tr>
+                    <th>Message</th>
+                    <th>Likes</th>
+                    <th>Unlikes</th>
+                    <th>Hearts</th>
+                    <th>Cries</th>
+                    <th>Feedback</th>
+                    <th>View Count</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stat in paginated_stats %}
+                <tr>
+                    <td>{{ stat.title }}</td>
+                    <td>{{ stat.like_count }}</td>
+                    <td>{{ stat.unlike_count }}</td>
+                    <td>{{ stat.heart_count }}</td>
+                    <td>{{ stat.cry_count }}</td>
+                    <td>{{ stat.feedback_count }}</td>
+                    <td>{{ stat.view_count }}</td>
+                    <td><a href="{{ url_for('view_reactions', content_id=stat.id) }}" class="view-btn">View</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
 
-<!-- Pagination Controls -->
-<div class="pagination">
-    {% if current_page > 1 %}
-    <a href="?page={{ current_page - 1 }}" class="page-link">Previous</a>
-    {% endif %}
+        <!-- Pagination Controls -->
+        <div class="pagination">
+            {% if current_page > 1 %}
+            <a href="?page={{ current_page - 1 }}" class="page-link">Previous</a>
+            {% endif %}
 
-    {% for page_num in range(1, total_pages + 1) %}
-    <a href="?page={{ page_num }}" class="page-link {% if page_num == current_page %}active{% endif %}">{{ page_num }}</a>
-    {% endfor %}
+            {% for page_num in range(1, total_pages + 1) %}
+            <a href="?page={{ page_num }}" class="page-link {% if page_num == current_page %}active{% endif %}">{{ page_num }}</a>
+            {% endfor %}
 
-    {% if current_page < total_pages %}
-    <a href="?page={{ current_page + 1 }}" class="page-link">Next</a>
-    {% endif %}
+            {% if current_page < total_pages %}
+            <a href="?page={{ current_page + 1 }}" class="page-link">Next</a>
+            {% endif %}
+        </div>
+
+        {% else %}
+        <p>No content available. Send a message to populate this table.</p>
+        {% endif %}
+    </div>
 </div>
-
-{% else %}
-<p>No content available. Send a message to populate this table.</p>
-{% endif %}
 
 <style>
     .dashboard-stats {
@@ -89,6 +104,11 @@
         border-radius: 5px;
         text-align: center;
         flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+    .stat-box-uniform {
+        height: 150px; /* Uniform height for Registered Employees and Active Devices */
     }
     .stat-box h3 {
         margin: 0 0 10px;
@@ -100,6 +120,7 @@
         font-size: 1.5em;
         font-weight: bold;
         color: #007bff;
+        transition: all 1.5s ease-out;
     }
     .content-table {
         width: 100%;
@@ -152,10 +173,138 @@
         color: white;
         border-color: #007bff;
     }
+    #sentMessagesChart {
+        max-width: 400px;
+        margin: 20px auto;
+    }
+    .dashboard-layout {
+        display: flex;
+        margin-top: 20px;
+    }
+    .department-section {
+        flex: 1;
+        max-width: 30%;
+        padding-right: 20px;
+    }
+    .department-list {
+        list-style: none;
+        padding: 0;
+    }
+    .department-list li {
+        margin: 10px 0;
+        font-size: 1.1em;
+    }
+    .content-section {
+        flex: 3;
+    }
+    #timeFilter {
+        padding: 5px;
+        margin-bottom: 10px;
+    }
+    #departmentPieChart {
+        max-width: 300px;
+        margin: 0 auto 20px;
+    }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
+        // Animation for counts
+        function animateCount(id, target) {
+            let start = 0;
+            const duration = 1500;
+            const stepTime = Math.abs(Math.floor(duration / target));
+            const element = document.getElementById(id);
+            const timer = setInterval(() => {
+                start += 1;
+                element.textContent = start;
+                if (start >= target) clearInterval(timer);
+            }, stepTime);
+        }
+
+        animateCount('employeeCount', '{{ employee_count }}');
+        animateCount('activeDeviceCount', '{{ active_devices }}');
+
+        // Sent Messages Chart
+        const ctxSent = document.getElementById('sentMessagesChart').getContext('2d');
+        let sentChart = new Chart(ctxSent, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Total Sent Messages',
+                    data: [],
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Messages' } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        async function fetchSentMessages() {
+            const filter = document.getElementById('timeFilter').value;
+            try {
+                const response = await fetch(`/get_sent_messages?filter=${filter}`);
+                const data = await response.json();
+
+                sentChart.data.labels = data.labels;
+                sentChart.data.datasets[0].data = data.counts;
+                sentChart.update();
+            } catch (error) {
+                console.error('Error fetching sent messages:', error);
+            }
+        }
+
+        fetchSentMessages();
+
+        // Department Pie Chart
+        const ctxPie = document.getElementById('departmentPieChart').getContext('2d');
+        const departmentData = '{{ department_data | tojson | safe }}';
+        const pieLabels = departmentData.map(d => d[0].toUpperCase());
+        const pieValues = departmentData.map(d => d[1]);
+        const totalConnected = pieValues.reduce((a, b) => a + b, 0);
+        const pieColors = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+            '#FF9F40', '#FFCD56', '#36A2EB', '#4BC0C0', '#9966FF'
+        ]; // Expand as needed
+
+        new Chart(ctxPie, {
+            type: 'pie',
+            data: {
+                labels: pieLabels,
+                datasets: [{
+                    data: pieValues,
+                    backgroundColor: pieColors.slice(0, pieLabels.length),
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed;
+                                const percentage = totalConnected > 0 ? Math.round((value / totalConnected) * 100) : 0;
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         const pageLinks = document.querySelectorAll('.page-link');
         pageLinks.forEach(link => {
             link.addEventListener('click', async (e) => {
@@ -163,11 +312,9 @@
                 const url = new URL(link.href);
                 const page = url.searchParams.get('page');
                 
-                // Fetch paginated data
                 const response = await fetch(`/get_paginated_stats?page=${page}`);
                 const data = await response.json();
                 
-                // Update table content
                 const tbody = document.querySelector('.content-table tbody');
                 tbody.innerHTML = '';
                 data.paginated_stats.forEach(stat => {
@@ -185,7 +332,6 @@
                     tbody.appendChild(row);
                 });
 
-                // Update pagination links
                 const pagination = document.querySelector('.pagination');
                 pagination.innerHTML = '';
                 if (data.current_page > 1) {
@@ -198,10 +344,8 @@
                     pagination.innerHTML += `<a href="?page=${data.current_page + 1}" class="page-link">Next</a>`;
                 }
 
-                // Update URL without reloading
                 history.pushState({}, '', `?page=${page}`);
 
-                // Re-attach event listeners
                 const newPageLinks = document.querySelectorAll('.page-link');
                 newPageLinks.forEach(newLink => {
                     newLink.addEventListener('click', arguments.callee);
