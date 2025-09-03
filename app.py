@@ -475,80 +475,88 @@ def get_app():
 # Updated /update_status (remove login_required)
 @app.route('/update_status', methods=['POST'])
 def update_status():
-    """Update device status in employee_devices and device_update_status tables."""
-    data = request.get_json()
-    if not data or 'employee_id' not in data:
-        logger.error("Missing employee_id in update_status request")
-        supabase.table('device_update_status').insert({
-            'id': str(uuid.uuid4()),
-            'employee_id': data.get('employee_id', 'unknown'),
-            'device_id': data.get('device_id', 'unknown'),
-            'version': 'unknown',
-            'status': 'failed',
-            'error_message': 'Missing employee_id'
-        }).execute()
-        return jsonify({'error': 'Missing employee_id'}), 400
-
-    employee_id = data['employee_id']
-    status = data.get('status', 'offline')
-    app_running = data.get('app_running', False)
-    ip = data.get('ip')
-    device_type = data.get('device_type')
-    hostname = data.get('hostname', 'unknown-host')
-    email = data.get('email')
-    current_version = data.get('current_version', 'unknown')
-    device_id = data.get('device_id', employee_id)  # Default to employee_id if not provided
-
-    if status not in ['online', 'offline']:
-        logger.error(f"Invalid status: {status}")
-        return jsonify({'error': 'Invalid status'}), 400
-    if not isinstance(app_running, bool):
-        logger.error(f"Invalid app_running: {app_running}")
-        return jsonify({'error': 'Invalid app_running value'}), 400
-    if email and '@' not in email:
-        logger.error(f"Invalid email format: {email}")
-        return jsonify({'error': 'Invalid email format'}), 400
-
-    update_data = {
-        'employee_id': employee_id,
-        'status': status,
-        'app_running': app_running,
-        'ip': ip,
-        'device_type': device_type,
-        'hostname': hostname,
-        'email': email,
-        'last_seen': 'now()',
-        'updated_at': 'now()'
-    }
-    update_status_data = {
-        'id': str(uuid.uuid4()),
-        'employee_id': employee_id,
-        'device_id': device_id,
-        'version': current_version,
-        'status': 'success' if current_version == get_current_version() else data.get('update_status', 'pending'),
-        'last_attempted_at': 'now()',
-        'error_message': data.get('error_message') if data.get('update_status') == 'failed' else None
-    }
-
     try:
+        data = request.get_json()
+        logger.debug(f"Received update_status data: {data}")
+        if not data or 'employee_id' not in data:
+            logger.error("Missing employee_id in update_status request")
+            supabase.table('device_update_status').insert({
+                'id': str(uuid.uuid4()),
+                'employee_id': data.get('employee_id', 'unknown'),
+                'device_id': data.get('device_id', 'unknown'),
+                'version': 'unknown',
+                'status': 'failed',
+                'error_message': 'Missing employee_id'
+            }).execute()
+            return jsonify({'error': 'Missing employee_id'}), 400
+
+        employee_id = data['employee_id']
+        status = data.get('status', 'offline')
+        app_running = data.get('app_running', False)
+        ip = data.get('ip')
+        device_type = data.get('device_type')
+        hostname = data.get('hostname', 'unknown-host')
+        email = data.get('email')
+        current_version = data.get('current_version', 'unknown')
+        device_id = data.get('device_id', employee_id)
+
+        if status not in ['online', 'offline']:
+            logger.error(f"Invalid status: {status}")
+            return jsonify({'error': 'Invalid status'}), 400
+        if not isinstance(app_running, bool):
+            logger.error(f"Invalid app_running: {app_running}")
+            return jsonify({'error': 'Invalid app_running value'}), 400
+        if email and '@' not in email:
+            logger.error(f"Invalid email format: {email}")
+            return jsonify({'error': 'Invalid email format'}), 400
+
+        update_data = {
+            'employee_id': employee_id,
+            'status': status,
+            'app_running': app_running,
+            'ip': ip,
+            'device_type': device_type,
+            'hostname': hostname,
+            'email': email,
+            'last_seen': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        update_status_data = {
+            'id': str(uuid.uuid4()),
+            'employee_id': employee_id,
+            'device_id': device_id,
+            'version': current_version,
+            'status': 'success' if current_version == get_current_version() else data.get('update_status', 'pending'),
+            'last_attempted_at': datetime.now(timezone.utc).isoformat(),
+            'error_message': data.get('error_message') if data.get('update_status') == 'failed' else None
+        }
+
         # Validate employee exists
         employee = supabase.table('employees').select('id').eq('id', employee_id).execute().data
         if not employee:
             logger.error(f"Employee ID {employee_id} not found")
             return jsonify({'error': f"Employee ID {employee_id} not found"}), 400
 
+        # Remove None values from update_data to avoid schema violations
+        update_data = {k: v for k, v in update_data.items() if v is not None}
+        update_status_data = {k: v for k, v in update_status_data.items() if v is not None}
+
+        # Perform upserts with detailed logging
+        logger.debug(f"Upserting to employee_devices: {update_data}")
         supabase.table('employee_devices').upsert(update_data, on_conflict=['employee_id']).execute()
         if current_version != 'unknown':
+            logger.debug(f"Upserting to device_update_status: {update_status_data}")
             supabase.table('device_update_status').upsert(update_status_data, on_conflict=['employee_id', 'device_id']).execute()
+        
         logger.info(f"Updated device status for employee {employee_id}, version {current_version}, device_id {device_id}")
         return jsonify({'message': 'Status updated successfully', 'version_status': current_version}), 200
     except APIError as e:
         logger.error(f"Supabase API error updating device status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f"Database error: {str(e)}"}), 500
     except Exception as e:
-        logger.error(f"Unexpected error updating device status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
+        logger.error(f"Unexpected error updating device status: {str(e)}", exc_info=True)
+        return jsonify({'error': f"Unexpected error: {str(e)}"}), 500
+    
 # Updated /upload_version
 @app.route('/upload_version', methods=['GET', 'POST'])
 @login_required
