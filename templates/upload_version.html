@@ -2,8 +2,14 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Upload New App Version</h2>
-    
-    <!-- Display current version and download link -->
+
+    <!-- Page Status Indicator -->
+    <div class="mb-4">
+        <h4>Page Status</h4>
+        <span id="page-status" class="badge bg-secondary">Checking readiness...</span>
+    </div>
+
+    <!-- Current Version and Download Link -->
     <div class="mb-4">
         <h4>Current Version</h4>
         {% if current_version %}
@@ -14,7 +20,28 @@
         {% endif %}
     </div>
 
-    <!-- Error and success messages -->
+    <!-- Install Status -->
+    <div class="mb-4">
+        <h4>Install Status</h4>
+        <div id="install-status" class="alert alert-info" role="alert">
+            <p>Loading install status...</p>
+        </div>
+        <table class="table table-bordered mt-3" id="status-table">
+            <thead>
+                <tr>
+                    <th>Employee ID</th>
+                    <th>Device ID</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Last Attempted</th>
+                    <th>Error Message</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Error and Success Messages -->
     {% if error %}
     <div class="alert alert-danger" role="alert">
         {{ error }}
@@ -26,7 +53,7 @@
     </div>
     {% endif %}
 
-    <!-- Upload form -->
+    <!-- Upload Form -->
     <form method="post" enctype="multipart/form-data">
         <div class="mb-3">
             <label for="version_file" class="form-label">Version File (version.txt)</label>
@@ -38,5 +65,84 @@
         </div>
         <button type="submit" class="btn btn-primary">Upload</button>
     </form>
+
+    <!-- Endpoint Information -->
+    <div class="mt-4">
+        <h4>Update Status Endpoints</h4>
+        <p>Use the following endpoints to track update status for devices:</p>
+        <ul>
+            <li><strong>Summary Endpoint</strong>: <code>/update_status/summary</code> - Returns counts of successful, pending, and failed updates.</li>
+            <li><strong>Success Endpoint</strong>: <code>/update_status/success</code> - Returns devices that successfully installed the latest version.</li>
+            <li><strong>Pending Endpoint</strong>: <code>/update_status/pending</code> - Returns devices with pending updates.</li>
+            <li><strong>Failed Endpoint</strong>: <code>/update_status/failed</code> - Returns devices that failed to install the latest version.</li>
+        </ul>
+    </div>
 </div>
+
+<!-- JavaScript for Fetching Page and Install Status -->
+<script>
+    async function fetchPageStatus() {
+        try {
+            const response = await fetch('/check_upload_readiness');
+            const data = await response.json();
+            const statusSpan = document.getElementById('page-status');
+            if (response.ok && data.status === 'ready') {
+                statusSpan.className = 'badge bg-success';
+                statusSpan.textContent = 'Ready to Upload';
+            } else {
+                statusSpan.className = 'badge bg-danger';
+                statusSpan.textContent = data.message || 'Upload Not Ready';
+            }
+        } catch (error) {
+            document.getElementById('page-status').className = 'badge bg-danger';
+            document.getElementById('page-status').textContent = 'Error checking readiness';
+        }
+    }
+
+    async function fetchInstallStatus() {
+        try {
+            const response = await fetch('/update_status/summary');
+            const data = await response.json();
+            const statusDiv = document.getElementById('install-status');
+            const tableBody = document.getElementById('status-table').querySelector('tbody');
+            if (response.ok) {
+                statusDiv.className = 'alert alert-info';
+                statusDiv.innerHTML = `
+                    <p><strong>Successful Installs</strong>: ${data.successful}</p>
+                    <p><strong>Pending Installs</strong>: ${data.pending}</p>
+                    <p><strong>Failed Installs</strong>: ${data.failed}</p>
+                    <p><small>Last updated: ${new Date().toLocaleString()}</small></p>
+                `;
+                // Fetch detailed status for table
+                const detailResponse = await fetch('/update_status/all');
+                const details = await detailResponse.json();
+                tableBody.innerHTML = '';
+                details.forEach(record => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${record.employee_id}</td>
+                        <td>${record.device_id}</td>
+                        <td>${record.version}</td>
+                        <td>${record.status}</td>
+                        <td>${new Date(record.last_attempted_at).toLocaleString()}</td>
+                        <td>${record.error_message || '-'}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } else {
+                statusDiv.className = 'alert alert-warning';
+                statusDiv.innerHTML = `<p>Error fetching install status: ${data.error}</p>`;
+            }
+        } catch (error) {
+            document.getElementById('install-status').className = 'alert alert-danger';
+            document.getElementById('install-status').innerHTML = `<p>Error fetching install status: ${error.message}</p>`;
+        }
+    }
+
+    // Fetch statuses initially and every 30 seconds
+    fetchPageStatus();
+    fetchInstallStatus();
+    setInterval(fetchPageStatus, 30000);
+    setInterval(fetchInstallStatus, 30000);
+</script>
 {% endblock %}
