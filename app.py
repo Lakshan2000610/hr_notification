@@ -1321,13 +1321,15 @@ def set_message_delay():
             return jsonify({"message": "Missing required fields: employee_id, content_id, or delay_choice"}), 400
         
         # Determine delay based on choice
-        if delay_choice == "at now free":
+        if delay_choice == "Play Immediate":
             delay = timedelta(seconds=0)  # No delay, use current time or scheduled_time
-        elif delay_choice == "late of 30 minutes":
+        elif delay_choice == "Play within 15 minutes":
+            delay = timedelta(minutes=15)
+        elif delay_choice == "Play within 30 minutes":
             delay = timedelta(minutes=30)
-        elif delay_choice == "late of 1 hour":
+        elif delay_choice == "Play within 1 hour":
             delay = timedelta(hours=1)
-        elif delay_choice == "late of 3 hours":
+        elif delay_choice == "Play within 3 hours":
             delay = timedelta(hours=3)
         else:
             logging.error(f"Invalid delay_choice: {delay_choice}")
@@ -1342,11 +1344,11 @@ def set_message_delay():
         scheduled_time = datetime.fromisoformat(response.data[0]['scheduled_time'].replace('Z', '+00:00'))  # Ensure UTC
         logging.debug(f"Original scheduled_time: {scheduled_time}")
 
-        # For "late of X hours", use current local time as base and add delay
+        # For delayed options, use current local time as base and add delay
         current_local_time = datetime.now(timezone(offset=timedelta(hours=5, minutes=30)))  # +0530
-        if delay_choice in ["late of 30 minutes", "late of 1 hour", "late of 3 hours"]:
+        if delay_choice in ["Play within 15 minutes", "Play within 30 minutes", "Play within 1 hour", "Play within 3 hours"]:
             display_time = current_local_time + delay
-        else:  # "at now free"
+        else:  # "Play Immediate"
             display_time = max(scheduled_time, datetime.now(timezone.utc))
 
         # Convert display_time to UTC for storage
