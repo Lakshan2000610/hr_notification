@@ -116,7 +116,7 @@
                             data-bs-placement="top" 
                             title="Hostname: {{ 'Matched' if device.is_hostname_valid else 'Not Matched' }}, Email: {{ 'Matched' if device.is_email_valid else 'Not Matched' }}, IP: {{ 'Matched' if device.is_ip_valid else 'Not Matched' }}"
                             style="color: '{{ 'green' if device.is_hostname_valid and device.is_ip_valid else 'red' }}'; cursor: pointer;">
-                            {{ '✔' if device.is_hostname_valid and device.is_email_valid and device.is_ip_valid else '✖' }}
+                            {{ '✔' if device.is_hostname_valid and device.is_ip_valid else '✖' }}
                         </span>
                         {% else %}
                         <span style="color: gray;" data-bs-toggle="tooltip" data-bs-placement="top" title="Verification data incomplete">N/A</span>
