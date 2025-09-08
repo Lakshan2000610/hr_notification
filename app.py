@@ -17,6 +17,7 @@ import requests
 import pkg_resources
 from functools import wraps
 import json
+from dateutil import parser
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -1120,7 +1121,7 @@ def send_message():
             "text": text,
             "image_url": image_url,
             "url": video_url,
-            "scheduled_time": scheduled_time.isoformat(),
+            "scheduled_time": scheduled_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),  # Ensure 6-digit microseconds
             "employees": valid_employees,
         }
         logging.debug(f"Inserting content into scheduled_content: {content}")
@@ -1140,7 +1141,7 @@ def send_message():
     except Exception as e:
         logging.error(f"Unexpected error sending message: {str(e)} - Content: {content if 'content' in locals() else 'N/A'}, Result: {result if 'result' in locals() else 'N/A'}")
         return jsonify({"message": f"Error sending message: {str(e)}"}), 500
-
+    
 @app.route('/update_bulk_device_status', methods=['POST'])
 @login_required
 def update_bulk_device_status():
@@ -1341,8 +1342,14 @@ def set_message_delay():
             logging.error(f"Content ID {content_id} not found")
             return jsonify({"message": f"Content ID {content_id} not found"}), 400
         
-        scheduled_time = datetime.fromisoformat(response.data[0]['scheduled_time'].replace('Z', '+00:00'))  # Ensure UTC
-        logging.debug(f"Original scheduled_time: {scheduled_time}")
+        # Parse scheduled_time using dateutil.parser
+        try:
+            scheduled_time_str = response.data[0]['scheduled_time']
+            scheduled_time = parser.isoparse(scheduled_time_str)  # More flexible parsing
+            logging.debug(f"Parsed scheduled_time: {scheduled_time}")
+        except ValueError as e:
+            logging.error(f"Failed to parse scheduled_time {scheduled_time_str}: {str(e)}")
+            return jsonify({"message": f"Invalid scheduled_time format: {str(e)}"}), 400
 
         # For delayed options, use current local time as base and add delay
         current_local_time = datetime.now(timezone(offset=timedelta(hours=5, minutes=30)))  # +0530
@@ -1371,7 +1378,7 @@ def set_message_delay():
     except Exception as e:
         logging.error(f"Unexpected error setting message delay: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}"}), 500
-                
+                    
 @app.route('/message_preferences/<employee_id>/<content_id>', methods=['GET'])
 def get_message_preference(employee_id, content_id):
     logging.debug(f"Fetching message preference for employee_id: {employee_id}, content_id: {content_id}")

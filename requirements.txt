@@ -10,3 +10,5 @@ PySide6==6.5.0
 python-dotenv==1.0.1
 werkzeug==3.0.4
 importlib-metadata==8.5.0
+python-dateutil==2.9.0.post0
+
