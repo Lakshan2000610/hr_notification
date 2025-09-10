@@ -41,11 +41,16 @@ CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
 UPLOAD_DIR = "/var/www/hr_notification/uploads"
+VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
+IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
 
-# Ensure upload directory exists
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Ensure upload directories exist
+for directory in [UPLOAD_DIR, VIDEO_DIR, IMAGE_DIR]:
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        logging.info(f"Created directory: {directory}")
+
 
 # Validate Supabase URL
 def validate_supabase_url(url):
@@ -96,22 +101,23 @@ def init_supabase_client():
 
 supabase: Client = init_supabase_client()
 
-# Verify file exists in bucket
-def verify_file(bucket_name, file_path):
+# Verify file exists in local directory
+def verify_file(directory, filename):
     try:
-        response = requests.head(
-            f"{SUPABASE_URL}/storage/v1/object/public/{bucket_name}/{file_path}",
-            headers={"Authorization": f"Bearer {SUPABASE_KEY}"}
-        )
-        if response.status_code != 200:
-            logging.error(f"File verification failed for {bucket_name}/{file_path}: {response.status_code}")
+        file_path = os.path.join(directory, filename)
+        if not os.path.exists(file_path):
+            logging.error(f"File not found: {file_path}")
             return False
-        logging.info(f"File verified: {bucket_name}/{file_path}")
+        file_size = os.path.getsize(file_path)
+        if file_size < 1024:  # Minimum size check (1KB)
+            logging.error(f"File too small: {file_path}, size: {file_size} bytes")
+            return False
+        logging.info(f"File verified: {file_path}, size: {file_size} bytes")
         return True
     except Exception as e:
-        logging.error(f"Error verifying file {bucket_name}/{file_path}: {str(e)}")
+        logging.error(f"Error verifying file {file_path}: {str(e)}")
         return False
-
+    
 # Create storage bucket and set RLS policies if it doesn't exist
 def ensure_bucket(bucket_name):
     try:
@@ -178,6 +184,20 @@ def get_current_version():
             return f.read().strip()
     except Exception:
         return None
+
+# Serve files from uploads directory
+@app.route('/uploads/<path:filename>')
+def serve_uploaded_file(filename):
+    try:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if not os.path.exists(file_path):
+            logging.error(f"File not found: {file_path}")
+            return jsonify({"message": "File not found"}), 404
+        logging.info(f"Serving file: {file_path}")
+        return send_file(file_path, as_attachment=False)
+    except Exception as e:
+        logging.error(f"Error serving file {file_path}: {str(e)}")
+        return jsonify({"message": f"Error serving file: {str(e)}"}), 500
     
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -473,17 +493,29 @@ def get_app():
         logger.error(f"Error serving app executable: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-# Updated /update_status (remove login_required)
 @app.route('/update_status', methods=['POST'])
 def update_status():
     try:
         data = request.get_json()
-        logger.debug(f"Received update_status data: {data}")
-        if not data or 'employee_id' not in data:
-            logger.error("Missing employee_id in update_status request")
+        logging.debug(f"Received update_status data: {data}")
+        if not data or not isinstance(data, dict):
+            logging.error("Invalid or missing JSON data in update_status request")
             supabase.table('device_update_status').insert({
                 'id': str(uuid.uuid4()),
-                'employee_id': data.get('employee_id', 'unknown'),
+                'employee_id': data.get('employee_id', 'unknown') if data else 'unknown',
+                'device_id': data.get('device_id', 'unknown') if data else 'unknown',
+                'version': 'unknown',
+                'status': 'failed',
+                'error_message': 'Invalid or missing JSON data'
+            }).execute()
+            return jsonify({'error': 'Invalid or missing JSON data'}), 400
+
+        employee_id = data.get('employee_id')
+        if not employee_id:
+            logging.error("Missing employee_id in update_status request")
+            supabase.table('device_update_status').insert({
+                'id': str(uuid.uuid4()),
+                'employee_id': 'unknown',
                 'device_id': data.get('device_id', 'unknown'),
                 'version': 'unknown',
                 'status': 'failed',
@@ -491,7 +523,6 @@ def update_status():
             }).execute()
             return jsonify({'error': 'Missing employee_id'}), 400
 
-        employee_id = data['employee_id']
         status = data.get('status', 'offline')
         app_running = data.get('app_running', False)
         ip = data.get('ip')
@@ -500,16 +531,38 @@ def update_status():
         email = data.get('email')
         current_version = data.get('current_version', 'unknown')
         device_id = data.get('device_id', employee_id)
+        update_status = data.get('update_status', 'pending')
+        error_message = data.get('error_message')
 
+        # Validate inputs
         if status not in ['online', 'offline']:
-            logger.error(f"Invalid status: {status}")
+            logging.error(f"Invalid status: {status}")
             return jsonify({'error': 'Invalid status'}), 400
         if not isinstance(app_running, bool):
-            logger.error(f"Invalid app_running: {app_running}")
+            logging.error(f"Invalid app_running: {app_running}")
             return jsonify({'error': 'Invalid app_running value'}), 400
         if email and '@' not in email:
-            logger.error(f"Invalid email format: {email}")
+            logging.error(f"Invalid email format: {email}")
             return jsonify({'error': 'Invalid email format'}), 400
+        if update_status not in ['success', 'pending', 'failed']:
+            logging.error(f"Invalid update_status: {update_status}")
+            return jsonify({'error': 'Invalid update_status'}), 400
+
+        # Validate employee exists
+        employee = supabase.table('employees').select('id').eq('id', employee_id).execute().data
+        if not employee:
+            logging.error(f"Employee ID {employee_id} not found")
+            return jsonify({'error': f"Employee ID {employee_id} not found"}), 400
+
+        # Get current version from server
+        try:
+            server_version = get_current_version()
+            if server_version is None:
+                logging.warning("Failed to read server version, treating as unknown")
+                server_version = 'unknown'
+        except Exception as e:
+            logging.error(f"Error reading server version: {str(e)}", exc_info=True)
+            server_version = 'unknown'
 
         update_data = {
             'employee_id': employee_id,
@@ -527,37 +580,31 @@ def update_status():
             'employee_id': employee_id,
             'device_id': device_id,
             'version': current_version,
-            'status': 'success' if current_version == get_current_version() else data.get('update_status', 'pending'),
+            'status': 'success' if current_version == server_version else update_status,
             'last_attempted_at': datetime.now(timezone.utc).isoformat(),
-            'error_message': data.get('error_message') if data.get('update_status') == 'failed' else None
+            'error_message': error_message if update_status == 'failed' else None
         }
-
-        # Validate employee exists
-        employee = supabase.table('employees').select('id').eq('id', employee_id).execute().data
-        if not employee:
-            logger.error(f"Employee ID {employee_id} not found")
-            return jsonify({'error': f"Employee ID {employee_id} not found"}), 400
 
         # Remove None values from update_data to avoid schema violations
         update_data = {k: v for k, v in update_data.items() if v is not None}
         update_status_data = {k: v for k, v in update_status_data.items() if v is not None}
 
         # Perform upserts with detailed logging
-        logger.debug(f"Upserting to employee_devices: {update_data}")
+        logging.debug(f"Upserting to employee_devices: {update_data}")
         supabase.table('employee_devices').upsert(update_data, on_conflict=['employee_id']).execute()
         if current_version != 'unknown':
-            logger.debug(f"Upserting to device_update_status: {update_status_data}")
+            logging.debug(f"Upserting to device_update_status: {update_status_data}")
             supabase.table('device_update_status').upsert(update_status_data, on_conflict=['employee_id', 'device_id']).execute()
         
-        logger.info(f"Updated device status for employee {employee_id}, version {current_version}, device_id {device_id}")
+        logging.info(f"Updated device status for employee {employee_id}, version {current_version}, device_id {device_id}")
         return jsonify({'message': 'Status updated successfully', 'version_status': current_version}), 200
     except APIError as e:
-        logger.error(f"Supabase API error updating device status: {str(e)}")
+        logging.error(f"Supabase API error updating device status: {str(e)}", exc_info=True)
         return jsonify({'error': f"Database error: {str(e)}"}), 500
     except Exception as e:
-        logger.error(f"Unexpected error updating device status: {str(e)}", exc_info=True)
+        logging.error(f"Unexpected error updating device status: {str(e)}", exc_info=True)
         return jsonify({'error': f"Unexpected error: {str(e)}"}), 500
-    
+        
 # Updated /upload_version
 @app.route('/upload_version', methods=['GET', 'POST'])
 @login_required
@@ -1034,37 +1081,31 @@ def send_message():
                 logging.error("Invalid video format. Only MP4 supported")
                 return jsonify({"message": "Only MP4 videos are supported"}), 400
             
-            try:
-                ensure_bucket('videos')
-            except Exception as e:
-                logging.error(f"Video bucket creation failed: {str(e)}")
-                return jsonify({"message": f"Failed to create or access videos bucket: {str(e)}"}), 500
-            
             video_id = str(uuid.uuid4())
-            video_path = os.path.join(tempfile.gettempdir(), f"{video_id}.mp4")
-            video.save(video_path)
+            video_filename = secure_filename(f"{video_id}.mp4")
+            video_path = os.path.join(VIDEO_DIR, video_filename)
+            
             try:
                 retries = 3
                 for attempt in range(retries):
                     try:
-                        with open(video_path, 'rb') as f:
-                            supabase.storage.from_('videos').upload(f"public/{video_id}.mp4", f, {
-                                'contentType': 'video/mp4'
-                            })
-                        if not verify_file('videos', f"public/{video_id}.mp4"):
-                            raise Exception(f"Video upload verification failed for {video_id}.mp4")
-                        video_url = f"{SUPABASE_URL}/storage/v1/object/public/videos/public/{video_id}.mp4"
-                        logging.info(f"Video uploaded successfully: {video_url}")
+                        video.save(video_path)
+                        if not verify_file(VIDEO_DIR, video_filename):
+                            raise Exception(f"Video save verification failed for {video_filename}")
+                        video_url = f"https://hrnotification.acorngroup.lk/uploads/message/videos/{video_filename}"
+                        logging.info(f"Video saved successfully: {video_url}")
                         break
                     except Exception as e:
-                        logging.error(f"Video upload attempt {attempt + 1} failed: {str(e)}")
+                        logging.error(f"Video save attempt {attempt + 1} failed: {str(e)}")
                         if attempt == retries - 1:
-                            raise Exception(f"Failed to upload video after {retries} attempts: {str(e)}")
+                            if os.path.exists(video_path):
+                                os.remove(video_path)
+                            raise Exception(f"Failed to save video after {retries} attempts: {str(e)}")
                         time.sleep(2)
-            finally:
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-        
+            except Exception as e:
+                logging.error(f"Video save failed: {str(e)}")
+                return jsonify({"message": f"Failed to save video: {str(e)}"}), 500
+
         image_url = None
         if 'image' in request.files and request.files['image'].filename:
             image = request.files['image']
@@ -1072,37 +1113,31 @@ def send_message():
                 logging.error("Invalid image format. Only JPG/PNG supported")
                 return jsonify({"message": "Only JPG/PNG images are supported"}), 400
             
-            try:
-                ensure_bucket('images')
-            except Exception as e:
-                logging.error(f"Image bucket creation failed: {str(e)}")
-                return jsonify({"message": f"Failed to create or access images bucket: {str(e)}"}), 500
-            
             image_id = str(uuid.uuid4())
             image_ext = image.filename.rsplit('.', 1)[1].lower()
-            image_path = os.path.join(tempfile.gettempdir(), f"{image_id}.{image_ext}")
-            image.save(image_path)
+            image_filename = secure_filename(f"{image_id}.{image_ext}")
+            image_path = os.path.join(IMAGE_DIR, image_filename)
+            
             try:
                 retries = 3
                 for attempt in range(retries):
                     try:
-                        with open(image_path, 'rb') as f:
-                            supabase.storage.from_('images').upload(f"public/{image_id}.{image_ext}", f, {
-                                'contentType': f'image/{image_ext if image_ext != "jpg" else "jpeg"}'
-                            })
-                        if not verify_file('images', f"public/{image_id}.{image_ext}"):
-                            raise Exception(f"Image upload verification failed for {image_id}.{image_ext}")
-                        image_url = f"{SUPABASE_URL}/storage/v1/object/public/images/public/{image_id}.{image_ext}"
-                        logging.info(f"Image uploaded successfully: {image_url}")
+                        image.save(image_path)
+                        if not verify_file(IMAGE_DIR, image_filename):
+                            raise Exception(f"Image save verification failed for {image_filename}")
+                        image_url = f"https://hrnotification.acorngroup.lk/uploads/message/images/{image_filename}"
+                        logging.info(f"Image saved successfully: {image_url}")
                         break
                     except Exception as e:
-                        logging.error(f"Image upload attempt {attempt + 1} failed: {str(e)}")
+                        logging.error(f"Image save attempt {attempt + 1} failed: {str(e)}")
                         if attempt == retries - 1:
-                            raise Exception(f"Failed to upload image after {retries} attempts: {str(e)}")
+                            if os.path.exists(image_path):
+                                os.remove(image_path)
+                            raise Exception(f"Failed to save image after {retries} attempts: {str(e)}")
                         time.sleep(2)
-            finally:
-                if os.path.exists(image_path):
-                    os.remove(image_path)
+            except Exception as e:
+                logging.error(f"Image save failed: {str(e)}")
+                return jsonify({"message": f"Failed to save image: {str(e)}"}), 500
         
         # Determine content type
         content_type = "text"
@@ -1121,7 +1156,7 @@ def send_message():
             "text": text,
             "image_url": image_url,
             "url": video_url,
-            "scheduled_time": scheduled_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),  # Ensure 6-digit microseconds
+            "scheduled_time": scheduled_time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             "employees": valid_employees,
         }
         logging.debug(f"Inserting content into scheduled_content: {content}")
