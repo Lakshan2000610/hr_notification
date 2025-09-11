@@ -552,8 +552,8 @@ def update_status():
         if email and '@' not in email:
             logging.error(f"Invalid email format: {email}")
             return jsonify({'error': 'Invalid email format'}), 400
-        if update_status not in ['success', 'pending', 'failed']:
-            logging.error(f"Invalid update_status: {update_status}")
+        if update_status_val not in ['success', 'pending', 'failed']:  # FIXED: Use update_status_val here
+            logging.error(f"Invalid update_status: {update_status_val}")
             return jsonify({'error': 'Invalid update_status'}), 400
 
         # Validate employee exists
@@ -621,7 +621,7 @@ def update_status():
     except Exception as e:
         logging.error(f"Unexpected error updating device status: {str(e)}", exc_info=True)
         return jsonify({'error': f"Unexpected error: {str(e)}"}), 500
-    
+        
 # Updated /upload_version
 @app.route('/upload_version', methods=['GET', 'POST'])
 @login_required
