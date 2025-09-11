@@ -1211,20 +1211,45 @@ def update_bulk_device_status():
                 logging.error(f"Missing required fields for employee_id: {employee_id}")
                 continue
 
-            # Fetch existing device data to retain current status and app_running
-            existing_device = supabase.table('employee_devices').select('status, app_running').eq('employee_id', employee_id).execute().data
-            status = existing_device[0]['status'] if existing_device else "online"
-            app_running = existing_device[0]['app_running'] if existing_device else False
+            # Fetch existing device data to retain current fields (with safe check)
+            existing_device = supabase.table('employee_devices').select('status, app_running, hostname, email, ip, device_type').eq('employee_id', employee_id).execute().data
+            if existing_device:  # FIXED: Explicit check for empty list
+                existing = existing_device[0]
+                status = existing.get('status', 'online')
+                app_running = existing.get('app_running', False)
+                hostname = existing.get('hostname', 'unknown-host')  # FIXED: Safe default as string
+                email = existing.get('email')
+                ip = existing.get('ip')
+                device_type = existing.get('device_type')
+                logging.debug(f"Found existing device for {employee_id}: hostname={hostname}")
+            else:
+                # FIXED: Explicit fallbacks for new records to avoid NULLs
+                status = 'online'
+                app_running = False
+                hostname = 'unknown-host'  # Ensure NOT NULL
+                email = None  # Allow NULL if schema permits; adjust if required
+                ip = None
+                device_type = None
+                logging.warning(f"No existing device for {employee_id}; using defaults")
 
             device_data = {
                 "employee_id": employee_id,
                 "active_status": active_status,
                 "status": status,
                 "app_running": app_running,
+                "hostname": hostname,  # FIXED: Now guaranteed string
+                "email": email,
+                "ip": ip,
+                "device_type": device_type,
                 "last_seen": datetime.now(timezone.utc).isoformat(),
             }
+            # Remove None values if schema doesn't allow NULLs for other fields (customize as needed)
+            device_data = {k: v for k, v in device_data.items() if v is not None}
+            if 'hostname' not in device_data:  # Safety net
+                device_data['hostname'] = 'unknown-host'
+
             supabase.table('employee_devices').upsert(device_data).execute()
-            logging.info(f"Device status updated for employee: {employee_id} to active_status: {active_status}")
+            logging.info(f"Device status updated for employee: {employee_id} to active_status: {active_status}, hostname: {hostname}")
 
         return jsonify({"message": "Bulk device status updated successfully"})
     except APIError as e:
@@ -1233,7 +1258,7 @@ def update_bulk_device_status():
     except Exception as e:
         logging.error(f"Unexpected error updating bulk device status: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}"}), 500
-    
+        
 @app.route('/content/<employee_id>', methods=['GET'])
 def get_content(employee_id):
     try:
@@ -1548,26 +1573,45 @@ def update_device_status():
             logging.error("Missing required fields in update_device_status: employee_id or active_status")
             return jsonify({"message": "Missing required fields"}), 400
         
-        # Fetch existing device data to retain current fields
-        existing_device = supabase.table('employee_devices').select('status, app_running, hostname, email').eq('employee_id', employee_id).execute().data
-        status = existing_device[0]['status'] if existing_device else "online"
-        app_running = existing_device[0]['app_running'] if existing_device else False
-        hostname = existing_device[0]['hostname'] if existing_device else "unknown-host"  # Fallback
-        email = existing_device[0]['email'] if existing_device else None
-        
-        # Update with client-provided values if available
+        # Fetch existing device data to retain current fields (with safe check)
+        existing_device = supabase.table('employee_devices').select('status, app_running, hostname, email, ip, device_type').eq('employee_id', employee_id).execute().data
+        if existing_device:  # FIXED: Explicit check for empty list
+            existing = existing_device[0]
+            status = existing.get('status', 'online')
+            app_running = existing.get('app_running', False)
+            hostname = existing.get('hostname', 'unknown-host')  # FIXED: Safe default as string
+            email = existing.get('email')
+            ip = existing.get('ip')
+            device_type = existing.get('device_type')
+            logging.debug(f"Found existing device for {employee_id}: hostname={hostname}")
+        else:
+            # FIXED: Explicit fallbacks for new records to avoid NULLs
+            status = 'online'
+            app_running = False
+            hostname = 'unknown-host'  # Ensure NOT NULL
+            email = None  # Allow NULL if schema permits
+            ip = None
+            device_type = None
+            logging.warning(f"No existing device for {employee_id}; using defaults")
+
+        # Use client-provided values if available (e.g., from future extensions)
         device_data = {
             "employee_id": employee_id,
             "active_status": active_status,
             "status": status,
             "app_running": app_running,
+            "hostname": data.get('hostname', hostname),  # FIXED: Client override with safe default
+            "email": data.get('email', email),
+            "ip": data.get('ip', ip),
+            "device_type": data.get('device_type', device_type),
             "last_seen": datetime.now(timezone.utc).isoformat(),
-            "hostname": data.get('hostname', hostname),  # Use client-provided hostname or fallback
-            "email": data.get('email', email)  # Use client-provided email or fallback
         }
-        if not device_data["hostname"]:
-            device_data["hostname"] = "unknown-host"  # Ensure non-null hostname
-        
+        # Safety net for hostname
+        if not device_data.get('hostname'):
+            device_data['hostname'] = 'unknown-host'
+        # Remove None values if needed (customize per schema)
+        device_data = {k: v for k, v in device_data.items() if v is not None}
+
         supabase.table('employee_devices').upsert(device_data).execute()
         logging.info(f"Device status updated for employee: {employee_id} to active_status: {active_status}, hostname: {device_data['hostname']}")
         return jsonify({"message": "Device status updated successfully"})
@@ -1577,7 +1621,7 @@ def update_device_status():
     except Exception as e:
         logging.error(f"Unexpected error updating device status: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}"}), 500
-                
+                    
 @app.route('/record_view', methods=['POST'])
 def record_view():
     try:
