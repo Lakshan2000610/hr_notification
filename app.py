@@ -500,27 +500,35 @@ def update_status():
         logging.debug(f"Received update_status data: {data}")
         if not data or not isinstance(data, dict):
             logging.error("Invalid or missing JSON data in update_status request")
-            supabase.table('device_update_status').insert({
-                'id': str(uuid.uuid4()),
-                'employee_id': data.get('employee_id', 'unknown') if data else 'unknown',
-                'device_id': data.get('device_id', 'unknown') if data else 'unknown',
-                'version': 'unknown',
-                'status': 'failed',
-                'error_message': 'Invalid or missing JSON data'
-            }).execute()
+            # Insert failure to device_update_status if possible
+            try:
+                supabase.table('device_update_status').insert({
+                    'id': str(uuid.uuid4()),
+                    'employee_id': data.get('employee_id', 'unknown') if data else 'unknown',
+                    'device_id': data.get('device_id', 'unknown') if data else 'unknown',
+                    'version': 'unknown',
+                    'status': 'failed',
+                    'error_message': 'Invalid or missing JSON data'
+                }).execute()
+            except Exception as insert_e:
+                logging.error(f"Failed to log invalid data to device_update_status: {str(insert_e)}")
             return jsonify({'error': 'Invalid or missing JSON data'}), 400
 
         employee_id = data.get('employee_id')
         if not employee_id:
             logging.error("Missing employee_id in update_status request")
-            supabase.table('device_update_status').insert({
-                'id': str(uuid.uuid4()),
-                'employee_id': 'unknown',
-                'device_id': data.get('device_id', 'unknown'),
-                'version': 'unknown',
-                'status': 'failed',
-                'error_message': 'Missing employee_id'
-            }).execute()
+            # Similar insert attempt for failure
+            try:
+                supabase.table('device_update_status').insert({
+                    'id': str(uuid.uuid4()),
+                    'employee_id': 'unknown',
+                    'device_id': data.get('device_id', 'unknown'),
+                    'version': 'unknown',
+                    'status': 'failed',
+                    'error_message': 'Missing employee_id'
+                }).execute()
+            except Exception as insert_e:
+                logging.error(f"Failed to log missing employee_id to device_update_status: {str(insert_e)}")
             return jsonify({'error': 'Missing employee_id'}), 400
 
         status = data.get('status', 'offline')
@@ -530,8 +538,8 @@ def update_status():
         hostname = data.get('hostname', 'unknown-host')
         email = data.get('email')
         current_version = data.get('current_version', 'unknown')
-        device_id = data.get('device_id', employee_id)
-        update_status = data.get('update_status', 'pending')
+        device_id = data.get('device_id', employee_id)  # Fallback to employee_id if missing
+        update_status_val = data.get('update_status', 'pending')  # Renamed to avoid keyword conflict
         error_message = data.get('error_message')
 
         # Validate inputs
@@ -556,7 +564,7 @@ def update_status():
 
         # Get current version from server
         try:
-            server_version = get_current_version()
+            server_version = get_current_version() or 'unknown'
             if server_version is None:
                 logging.warning("Failed to read server version, treating as unknown")
                 server_version = 'unknown'
@@ -575,36 +583,45 @@ def update_status():
             'last_seen': datetime.now(timezone.utc).isoformat(),
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
+        update_data = {k: v for k, v in update_data.items() if v is not None}
+        
         update_status_data = {
             'id': str(uuid.uuid4()),
             'employee_id': employee_id,
             'device_id': device_id,
             'version': current_version,
-            'status': 'success' if current_version == server_version else update_status,
+            'status': 'success' if current_version == server_version else update_status_val,
             'last_attempted_at': datetime.now(timezone.utc).isoformat(),
-            'error_message': error_message if update_status == 'failed' else None
+            'error_message': error_message if update_status_val == 'failed' else None
         }
-
-        # Remove None values from update_data to avoid schema violations
-        update_data = {k: v for k, v in update_data.items() if v is not None}
         update_status_data = {k: v for k, v in update_status_data.items() if v is not None}
 
-        # Perform upserts with detailed logging
-        logging.debug(f"Upserting to employee_devices: {update_data}")
-        supabase.table('employee_devices').upsert(update_data, on_conflict=['employee_id']).execute()
+        # Perform upserts, but catch individual failures
+        try:
+            logging.debug(f"Upserting to employee_devices: {update_data}")
+            supabase.table('employee_devices').upsert(update_data, on_conflict=['employee_id']).execute()
+        except APIError as e:
+            logging.error(f"Failed to upsert employee_devices: {str(e)}")
+            # Continue anyway, since this is non-critical
+
         if current_version != 'unknown':
-            logging.debug(f"Upserting to device_update_status: {update_status_data}")
-            supabase.table('device_update_status').upsert(update_status_data, on_conflict=['employee_id', 'device_id']).execute()
-        
+            try:
+                logging.debug(f"Upserting to device_update_status: {update_status_data}")
+                supabase.table('device_update_status').upsert(update_status_data, on_conflict=['employee_id', 'device_id']).execute()
+            except APIError as e:
+                logging.error(f"Failed to upsert device_update_status: {str(e)}")
+                # Continue anyway
+
         logging.info(f"Updated device status for employee {employee_id}, version {current_version}, device_id {device_id}")
         return jsonify({'message': 'Status updated successfully', 'version_status': current_version}), 200
+
     except APIError as e:
         logging.error(f"Supabase API error updating device status: {str(e)}", exc_info=True)
         return jsonify({'error': f"Database error: {str(e)}"}), 500
     except Exception as e:
         logging.error(f"Unexpected error updating device status: {str(e)}", exc_info=True)
         return jsonify({'error': f"Unexpected error: {str(e)}"}), 500
-        
+    
 # Updated /upload_version
 @app.route('/upload_version', methods=['GET', 'POST'])
 @login_required
