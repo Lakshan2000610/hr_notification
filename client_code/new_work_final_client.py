@@ -1,3 +1,4 @@
+
 import getpass
 import subprocess
 import sys
@@ -10,8 +11,9 @@ import threading
 import winreg
 import os
 import json
+from PIL import Image, ImageFilter
 from datetime import datetime, timezone, timedelta
-from random import randint  # Remove 'random' from imports
+from random import randint
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                               QScrollArea, QFrame, QComboBox, QDialog, QMessageBox, QSystemTrayIcon, QMenu, QProgressBar,
                               QStackedWidget, QTextEdit, QGraphicsView, QGraphicsScene, QSizePolicy)
@@ -28,13 +30,23 @@ from packaging import version
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and PyInstaller."""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
 
-# Configure logging with UTF-8 encoding
+def create_blurred_image(input_path, output_path, blur_radius=5):
+    """Create a blurred version of the input image and save it to output_path."""
+    try:
+        image = Image.open(input_path)
+        blurred_image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        blurred_image.save(output_path)
+        logging.debug(f"Created blurred image at {output_path}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to create blurred image: {str(e)}")
+        return False
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -42,16 +54,15 @@ logging.basicConfig(
     filename=os.path.join(os.getenv('TEMP'), f'student_app_{getpass.getuser()}.log')
 )
 
-
 class StudentApp(QMainWindow):
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "1.0.3"
     SERVER_URL = "https://hrnotification.acorngroup.lk"
     new_content_signal = Signal(dict)
     update_scroll_signal = Signal()
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Client Notification System")
+        self.setWindowTitle(f"AcornHUB v{self.APP_VERSION}")
         self.resize(1200, 600)
         self.setStyleSheet("""
             QMainWindow { background-color: #ece4f7; }
@@ -83,7 +94,11 @@ class StudentApp(QMainWindow):
         self.all_content = []
         self.current_content_index = 0
         self.registered = False
+        self.is_first_registration = False  # New flag to track first-time registration
         self.processed_content_ids = set()
+        self.pending_display = {}
+        self.load_registration_data()
+        logging.debug(f"Initial processed_content_ids: {self.processed_content_ids}")
         self.emoji_map = {
             'like': '👍',
             'unlike': '👎',
@@ -105,16 +120,29 @@ class StudentApp(QMainWindow):
         self.scene = None
         self.setAttribute(Qt.WA_DeleteOnClose, False)
         logging.info("Starting student_app.py")
-        self.load_registration_data()  # Now this will work as it's an instance method
         self.setup_ui()
         self.setup_system_tray()
         self.new_content_signal.connect(self.show_message_dialog)
-        if self.employee_id:
+
+        # Check registration status and decide initial page
+        if self.employee_id and self.employee_email:
             self.validate_existing_registration()
+            if self.registered:
+                self.email_display.setText(f"Email: {self.employee_email}")
+                self.stack.setCurrentWidget(self.content_page)
+                self.check_content_at_startup()
+                self.start_content_check()
+                self.hide()
+            else:
+                self.stack.setCurrentWidget(self.initial_page)
+                self.show_window()
+                QTimer.singleShot(240000, self.check_for_updates)
         else:
+            self.is_first_registration = True
             self.stack.setCurrentWidget(self.initial_page)
-        QTimer.singleShot(randint(0, 86400000), self.check_for_updates)
-        
+            self.show_window()
+            QTimer.singleShot(240000, self.check_for_updates) # Check for updates after 4 minutes
+
     def get_ip(self):
         try:
             ip = socket.gethostbyname(socket.gethostname())
@@ -123,18 +151,71 @@ class StudentApp(QMainWindow):
         logging.debug(f"Detected IP: {ip}")
         return ip
 
+    def load_processed_content_ids(self):
+        """Load processed content IDs from a local file."""
+        # Use a default user-based file if employee_id is not set
+        processed_file = os.path.join(os.getenv('TEMP'), f'student_app_{self.employee_id or getpass.getuser()}_processed.json')
+        logging.debug(f"Attempting to load processed content from {processed_file}")
+        try:
+            if os.path.exists(processed_file):
+                with open(processed_file, 'r') as f:
+                    data = json.load(f)
+                    self.processed_content_ids = set(data.get('processed_content_ids', []))
+                    logging.debug(f"Loaded processed_content_ids: {self.processed_content_ids}")
+            else:
+                logging.debug(f"No processed content file found at {processed_file}, creating empty file")
+                self.save_processed_content_ids()  # Create empty file
+        except Exception as e:
+            logging.error(f"Failed to load processed_content_ids from {processed_file}: {str(e)}")
+            self.processed_content_ids = set()  # Reset to empty if loading fails
+
+    def save_processed_content_ids(self):
+        """Save processed content IDs to a local file."""
+        processed_file = os.path.join(os.getenv('TEMP'), f'student_app_{self.employee_id or getpass.getuser()}_processed.json')
+        try:
+            with open(processed_file, 'w') as f:
+                json.dump({'processed_content_ids': list(self.processed_content_ids)}, f)
+            logging.debug(f"Saved processed_content_ids: {self.processed_content_ids}")
+        except Exception as e:
+            logging.error(f"Failed to save processed_content_ids to {processed_file}: {str(e)}")
+
     def load_registration_data(self):
-        """Load stored registration data from a local file."""
+        """Load stored registration data from a local file or auto-register if host_email exists on server."""
         reg_file = os.path.join(os.getenv('TEMP'), f'student_app_{getpass.getuser()}_reg.json')
+        self.registered = False  # Reset registered status
         if os.path.exists(reg_file):
             try:
                 with open(reg_file, 'r') as f:
                     data = json.load(f)
                     self.employee_id = data.get('employee_id')
                     self.employee_email = data.get('employee_email')
-                    logging.info(f"Loaded registration data: employee_id={self.employee_id}, email={self.employee_email}")
+                    if self.employee_id and self.employee_email:
+                        logging.info(f"Loaded registration data: employee_id={self.employee_id}, email={self.employee_email}")
+                    else:
+                        logging.warning(f"Invalid registration data in {reg_file}: missing employee_id or employee_email")
+                        self.employee_id = None
+                        self.employee_email = None
             except Exception as e:
                 logging.error(f"Failed to load registration data: {str(e)}")
+                self.employee_id = None
+                self.employee_email = None
+        else:
+            logging.debug(f"No registration file found at {reg_file}")
+            # Check if host_email exists on server
+            try:
+                response = requests.post(f"{self.server_url}/get_employee", json={"email": self.host_email}, timeout=5)
+                response.raise_for_status()
+                resp_data = response.json()
+                if resp_data.get('exists'):
+                    self.employee_id = resp_data['id']
+                    self.employee_email = self.host_email
+                    self.save_registration_data()
+                    logging.info(f"Auto-registered using existing server entry for email {self.host_email}, employee_id={self.employee_id}")
+                else:
+                    logging.debug(f"Host email {self.host_email} does not exist on server, proceeding to show email entry page")
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Error checking host_email on server: {str(e)}")
+                # Proceed to show email entry page on failure
 
     def save_registration_data(self):
         """Save registration data to a local file."""
@@ -149,27 +230,81 @@ class StudentApp(QMainWindow):
 
     def validate_existing_registration(self):
         """Validate existing employee_id with the server and proceed if valid."""
-        if not self.employee_id:
+        if not self.employee_id or not self.employee_email:
+            logging.warning("No employee_id or employee_email for validation")
+            self.registered = False
+            self.stack.setCurrentWidget(self.initial_page)
             return
         try:
-            # Use /get_or_create_employee with the stored email to validate
             response = requests.post(f"{self.server_url}/get_or_create_employee", json={"email": self.employee_email}, timeout=5)
             response.raise_for_status()
             server_employee_id = response.json().get('employee_id')
             if server_employee_id == self.employee_id:
                 self.registered = True
-                self.email_display.setText(f"Email: {self.employee_email}")
-                self.stack.setCurrentWidget(self.content_page)
-                self.start_content_check()
                 logging.info(f"Validated existing registration for employee_id {self.employee_id}")
+                self.register_device_request(is_re_registration=True)
             else:
+                logging.warning(f"Server employee_id {server_employee_id} does not match stored employee_id {self.employee_id}")
                 self.employee_id = None
                 self.employee_email = None
+                self.registered = False
+                self.is_first_registration = True
                 self.stack.setCurrentWidget(self.initial_page)
-                logging.warning("Existing registration invalid, showing email page")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error validating registration: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to validate registration: {str(e)}")
+            self.employee_id = None
+            self.employee_email = None
+            self.registered = False
+            self.is_first_registration = True
             self.stack.setCurrentWidget(self.initial_page)
+
+    def register_device_request(self, is_re_registration=False):
+        """Register device with the server, show dialog only for first registration or errors."""
+        logging.debug(f"Registering device for employee_id: {self.employee_id}, ip: {self.ip}, device_type: {self.device_type}, hostname: {self.hostname}, email: {self.host_email}, is_re_registration: {is_re_registration}")
+        retries = 3
+        for attempt in range(retries):
+            try:
+                response = requests.post(f"{self.server_url}/register_device", json={
+                    "employee_id": self.employee_id,
+                    "ip": self.ip,
+                    "device_type": self.device_type,
+                    "hostname": self.hostname,
+                    "email": self.host_email
+                }, timeout=5)
+                response.raise_for_status()
+                logging.info(f"Device registered: {self.employee_id}")
+                self.registered = True
+                self.save_registration_data()
+                if not is_re_registration:
+                    dialog = QDialog(self)
+                    dialog.setWindowTitle("Registration")
+                    dialog.setStyleSheet("background-color: #ece4f7;")
+                    dialog.setFixedSize(300, 150)
+                    dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+                    layout = QVBoxLayout(dialog)
+                    label = QLabel("Registration Successful")
+                    label.setStyleSheet("color: #333333; font-size: 14px;")
+                    layout.addWidget(label, alignment=Qt.AlignCenter)
+                    ok_button = QPushButton("OK")
+                    ok_button.setStyleSheet("background-color: #b8a9d9; color: #ffffff; padding: 5px; font-weight: bold;")
+                    ok_button.clicked.connect(lambda: self.minimize_to_tray_and_close_dialog(dialog))
+                    layout.addWidget(ok_button, alignment=Qt.AlignCenter)
+                    dialog.show()
+                return
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Device registration attempt {attempt + 1} failed: {str(e)}")
+                if attempt == retries - 1:
+                    QMessageBox.critical(self, "Error", f"Failed to register device: {str(e)}")
+                    self.registered = False
+                    return
+                time.sleep(2)
+
+    def minimize_to_tray_and_close_dialog(self, dialog):
+        """Minimize the app to tray and close the dialog."""
+        self.minimize_to_tray()
+        dialog.close()
+        self.start_content_check()
 
     # New method to load/generate persistent device_id
     def load_device_id(self):
@@ -223,33 +358,9 @@ class StudentApp(QMainWindow):
         except Exception as e:
             logging.error(f"Failed to add to registry: {str(e)}")
 
-    def init_ui(self):
-        """Initialize the UI without the close button."""
-        self.setWindowTitle("StudentApp")
-        # Remove close button and other system menu options
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint & ~Qt.WindowSystemMenuHint)
-        self.setFixedSize(400, 300)  # Fixed size to prevent resizing
-
-        # Create a central widget and layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-
-        # Add a custom close button
-        self.close_button = QPushButton("Close Application")
-        self.close_button.clicked.connect(self.close_app)
-        layout.addWidget(self.close_button)
-        layout.addStretch()  # Push button to the top
-
-        self.show()
-
-    def close_app(self):
-        """Handle app closure via custom button."""
-        logging.info("Application closed by user via custom button")
-        self.close()
-
     def check_for_updates(self):
         """Check for updates and report status to server."""
+        logging.info("Checking for updates...")
         try:
             self.report_update_status('pending', 'Checking for updates')
             response = requests.get(f"{self.SERVER_URL}/updates/version", timeout=5)
@@ -265,7 +376,7 @@ class StudentApp(QMainWindow):
             logging.error(f"Error checking for updates: {str(e)}")
             self.report_update_status('failed', f"Error checking updates: {str(e)}")
         finally:
-            QTimer.singleShot(4 * 60 * 60 * 1000, self.check_for_updates)  # Retry in 4 hours
+            QTimer.singleShot(4 * 60 * 1000, self.check_for_updates)  # Check again in 4 minutes
 
     # Updated download_update method
     def download_update(self, new_version):
@@ -323,72 +434,6 @@ class StudentApp(QMainWindow):
                 except Exception as e:
                     logging.warning(f"Failed to clean up {temp_exe_path}: {str(e)}")
     
-    def show_update_dialog(self, exe_url, new_version):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Updating Application")
-        dialog.setFixedSize(300, 100)
-        dialog.setStyleSheet("background-color: #ece4f7;")
-        dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
-        layout = QVBoxLayout(dialog)
-        label = QLabel(f"Downloading update to version {new_version}...")
-        label.setStyleSheet("color: #333333; font-size: 14px;")
-        layout.addWidget(label)
-        progress_bar = QProgressBar()
-        progress_bar.setRange(0, 100)
-        layout.addWidget(progress_bar)
-        dialog.show()
-
-        def download_and_update():
-            try:
-                temp_dir = tempfile.gettempdir()
-                new_exe_path = os.path.join(temp_dir, f"app_{new_version}.exe")
-                # Clean up old .exe files
-                for old_file in os.listdir(temp_dir):
-                    if old_file.startswith("app_") and old_file.endswith(".exe"):
-                        try:
-                            os.remove(os.path.join(temp_dir, old_file))
-                            logging.info(f"Removed old update file: {old_file}")
-                        except Exception as e:
-                            logging.warning(f"Failed to remove old file {old_file}: {str(e)}")
-                response = requests.get(exe_url, timeout=10, stream=True)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
-                with open(new_exe_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total_size > 0:
-                                progress_bar.setValue(int((downloaded / total_size) * 100))
-                logging.info(f"Downloaded update to {new_exe_path}")
-                current_exe = sys.executable
-                batch_path = os.path.join(temp_dir, "update.bat")
-                with open(batch_path, 'w') as batch:
-                    batch.write(f"""@echo off
-    timeout /t 3 /nobreak >nul
-    del "{current_exe}"
-    copy "{new_exe_path}" "{current_exe}"
-    start "" "{current_exe}"
-    del "{batch_path}"
-    """)
-                subprocess.Popen(batch_path, shell=True)
-                dialog.close()
-                logging.info("Update batch started. Exiting app...")
-                QApplication.quit()
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Update failed: {str(e)}")
-                dialog.close()
-                QMessageBox.warning(self, "Update Failed", f"Failed to update: {str(e)}")
-                try:
-                    if os.path.exists(new_exe_path):
-                        os.remove(new_exe_path)
-                        logging.info(f"Cleaned up failed download: {new_exe_path}")
-                except Exception as e:
-                    logging.warning(f"Failed to clean up {new_exe_path}: {str(e)}")
-
-        QTimer.singleShot(0, download_and_update)
-
     def fetch_views(self):
         """Fetch view data from server to populate viewed_durations."""
         retries = 3
@@ -451,7 +496,7 @@ class StudentApp(QMainWindow):
 
         self.initial_page = QWidget()
         initial_layout = QVBoxLayout(self.initial_page)
-        logo_path = resource_path("logo_s.ico")
+        logo_path = resource_path("logo_s_n.png")
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path).scaled(QSize(100, 100), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             logo_label = QLabel()
@@ -493,33 +538,22 @@ class StudentApp(QMainWindow):
         main_content_widget = QWidget()
         self.main_content_layout = QVBoxLayout(main_content_widget)
 
-        # Modified top frame to align title, logo, countdown, and stop button
         top_frame = QFrame()
         top_layout = QHBoxLayout(top_frame)
-    
-        # Title on the left
         self.title_label = QLabel("")
         self.title_label.setAlignment(Qt.AlignLeft)
         self.title_label.setStyleSheet("color: #333333; font-size: 18px; font-weight: bold;")
         top_layout.addWidget(self.title_label)
-
-        # Spacer to push logo, countdown, and stop button to the right
         top_layout.addStretch()
-
-        # Logo
-        logo_path = resource_path("logo_s.ico")
+        logo_path = resource_path("logo_s_n.png")
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path).scaled(QSize(100, 70), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.logo_label = QLabel()
             self.logo_label.setPixmap(pixmap)
             top_layout.addWidget(self.logo_label)
-
-        # Countdown label
         self.countdown_label = QLabel("60")
         self.countdown_label.setStyleSheet("color: #333333; font-size: 14px; font-weight: bold;")
         top_layout.addWidget(self.countdown_label)
-
-        # Stop button
         self.stop_button = QPushButton()
         stop_icon_path = resource_path("stop.png")
         if os.path.exists(stop_icon_path):
@@ -532,28 +566,43 @@ class StudentApp(QMainWindow):
         self.stop_button.enterEvent = lambda event: self.animate_button(self.stop_button, True)
         self.stop_button.leaveEvent = lambda event: self.animate_button(self.stop_button, False)
         top_layout.addWidget(self.stop_button)
-
         self.main_content_layout.addWidget(top_frame)
+
+        # Preprocess the background image to apply blur
+        original_image_path = resource_path("logo_s.png")
+        blurred_image_path = resource_path("logo_s_blurred.png")
+        if os.path.exists(original_image_path) and not os.path.exists(blurred_image_path):
+            create_blurred_image(original_image_path, blurred_image_path, blur_radius=5)
 
         self.message_display = QTextEdit("")
         self.message_display.setReadOnly(True)
         self.message_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.message_display.setStyleSheet("font-size: 14px; border: none; background-color: #ece4f7; color: #333333;")
+        self.message_display.setStyleSheet("""
+            QTextEdit {
+                font-size: 18px;
+                font-weight: bold;
+                border: none;
+                background-color: rgba(255, 255, 255, 0.95);
+                color: #000000;
+                background-image: url('%s');
+                background-repeat: no-repeat;
+                background-position: center;
+                background-attachment: fixed;
+                background-size: cover;
+                padding: 12px;
+            }
+        """ % (blurred_image_path.replace('\\', '/')))
 
         self.media_frame = QFrame()
         media_layout = QVBoxLayout(self.media_frame)
         self.media_frame.setLayout(media_layout)
-
         self.loading_bar = QProgressBar()
         self.loading_bar.setMinimum(0)
         self.loading_bar.setMaximum(0)
         self.loading_bar.setVisible(False)
         self.main_content_layout.addWidget(self.loading_bar)
-
         self.content_container = QWidget()
         self.main_content_layout.addWidget(self.content_container)
-
-        # Move buttons, email, and developed_by to bottom
         bottom_widget = QWidget()
         bottom_layout = QVBoxLayout(bottom_widget)
         self.button_frame = QFrame()
@@ -567,7 +616,6 @@ class StudentApp(QMainWindow):
             btn.leaveEvent = lambda event: self.animate_button(btn, False)
             button_layout.addWidget(btn)
         bottom_layout.addWidget(self.button_frame)
-
         self.feedback_entry = QLineEdit()
         bottom_layout.addWidget(self.feedback_entry)
         self.submit_button = QPushButton("Submit Feedback")
@@ -575,7 +623,6 @@ class StudentApp(QMainWindow):
         self.submit_button.enterEvent = lambda event: self.animate_button(self.submit_button, True)
         self.submit_button.leaveEvent = lambda event: self.animate_button(self.submit_button, False)
         bottom_layout.addWidget(self.submit_button)
-
         self.nav_frame = QFrame()
         nav_layout = QHBoxLayout(self.nav_frame)
         prev_button = QPushButton("Previous")
@@ -589,29 +636,23 @@ class StudentApp(QMainWindow):
         next_button.leaveEvent = lambda event: self.animate_button(next_button, False)
         nav_layout.addWidget(next_button)
         bottom_layout.addWidget(self.nav_frame)
-
         self.minimize_button = QPushButton("Minimize to Tray")
         self.minimize_button.clicked.connect(self.minimize_to_tray)
         self.minimize_button.enterEvent = lambda event: self.animate_button(self.minimize_button, True)
         self.minimize_button.leaveEvent = lambda event: self.animate_button(self.minimize_button, False)
         bottom_layout.addWidget(self.minimize_button)
-
         self.email_display = QLabel("")
         self.email_display.setAlignment(Qt.AlignCenter)
-        bottom_layout.addSpacing(2)  # 2px gap between minimize and email
+        bottom_layout.addSpacing(2)
         bottom_layout.addWidget(self.email_display)
-
         self.developed_by_label = QLabel("@Developed by Acorn Group IT")
         self.developed_by_label.setAlignment(Qt.AlignCenter)
         self.developed_by_label.setStyleSheet("color: #666666; font-size: 10px; padding: 5px;")
         bottom_layout.addWidget(self.developed_by_label)
-
         bottom_widget.setLayout(bottom_layout)
         self.main_content_layout.addWidget(bottom_widget)
-
         main_content_widget.setLayout(self.main_content_layout)
         content_layout.addWidget(main_content_widget)
-
         self.content_page.setLayout(content_layout)
         self.stack.addWidget(self.content_page)
         if self.employee_id and self.registered:
@@ -634,7 +675,7 @@ class StudentApp(QMainWindow):
         anim.start()
 
     def setup_system_tray(self):
-        logo_path = resource_path("logo_s.ico")
+        logo_path = resource_path("logo_s_n.png")
         if os.path.exists(logo_path):
             icon = QIcon(logo_path)
             self.tray_icon = QSystemTrayIcon(self)
@@ -687,113 +728,185 @@ class StudentApp(QMainWindow):
         self.email_display.setText(f"Email: {email}")
         self.register_device_request()
 
-    def register_device_request(self):
-        logging.debug(f"Registering device for employee_id: {self.employee_id}, ip: {self.ip}, device_type: {self.device_type}, hostname: {self.hostname}, email: {self.host_email}")
-        retries = 3
-        for attempt in range(retries):
-            try:
-                response = requests.post(f"{self.server_url}/register_device", json={
-                    "employee_id": self.employee_id,
-                    "ip": self.ip,
-                    "device_type": self.device_type,
-                    "hostname": self.hostname,
-                    "email": self.host_email
-                }, timeout=5)
-                response.raise_for_status()
-                logging.info(f"Device registered: {self.employee_id}")
-                break
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Device registration attempt {attempt + 1} failed: {str(e)}")
-                if attempt == retries - 1:
-                    QMessageBox.critical(self, "Error", f"Failed to register device: {str(e)}")
-                    return
-                time.sleep(2)
-
-        QMessageBox.information(self, "Success", "Employee and device registered successfully")
-        self.registered = True
-        self.save_registration_data()  # Save data locally
-        self.start_content_check()
-
     def start_content_check(self):
-        self.content_thread = threading.Thread(target=self.check_content, daemon=True)
-        self.content_thread.start()
-        self.hide()
-        self.stack.setCurrentWidget(self.content_page)
+        """Start the content check thread."""
+        if self.content_thread is None or not self.content_thread.is_alive():
+            self.content_thread = threading.Thread(target=self.check_content, daemon=True)
+            self.content_thread.start()
+            logging.debug("Content check thread started")
+        else:
+            logging.debug("Content check thread already running")
+
+    def check_content_at_startup(self):
+        """Check for new content at startup and show window only if new messages are found."""
+        if not self.employee_id or not self.registered:
+            logging.debug("Skipping startup content check: not registered")
+            return
+        
+        try:
+            response = requests.get(f"{self.server_url}/content/{self.employee_id}", timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            logging.debug(f"Startup content response for {self.employee_id}: {data}")
+            self.notifications = data.get('notifications', [])
+            new_content = data.get('content', [])
+
+            self.fetch_views()
+
+            current_ids = {c['id'] for c in self.all_content}
+            new_messages = [c for c in new_content if c['id'] not in current_ids and c['id'] not in self.processed_content_ids and self.viewed_durations.get(c['id'], 0) <= 30]
+            logging.debug(f"New messages at startup: {[c['id'] for c in new_messages]}")
+            
+            for content in new_content:
+                if content['id'] not in current_ids:
+                    self.all_content.append(content)
+
+            if new_messages:
+                self.show()
+                self.raise_()
+                self.activateWindow()
+                logging.debug(f"New messages found at startup, showing window, visible: {self.isVisible()}, geometry: {self.geometry()}")
+                for content in new_messages:
+                    if content['id'] not in self.processed_content_ids and content['id'] not in self.pending_display:
+                        logging.debug(f"Emitting signal for new content {content['id']} at startup")
+                        self.new_content_signal.emit(content)
+            else:
+                logging.debug("No new messages at startup, keeping window hidden")
+                self.minimize_to_tray()
+
+            logging.debug(f"Processed content IDs after startup check: {self.processed_content_ids}")
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error checking content at startup: {str(e)}")
+            self.minimize_to_tray()
 
     def show_message_dialog(self, content):
-        logging.debug(f"Showing message dialog for content {content['id']}")
-        dialog = QDialog(self)
-        dialog.setWindowTitle("New Message Notification")
-        dialog.setStyleSheet("background-color: #ece4f7;")
-        dialog.setFixedSize(300, 200)
-        dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        """Show dialog only for new messages that haven't had delay options selected."""
+        content_id = content['id']
 
-        layout = QVBoxLayout(dialog)
-        label = QLabel("You have a new message, are you free?")
-        label.setStyleSheet("color: #333333; font-size: 14px;")
-        layout.addWidget(label, alignment=Qt.AlignCenter)
+        try:
+            # First check if message already has delay preferences
+            response = requests.get(
+                f"{self.server_url}/message_preferences/{self.employee_id}/{content_id}",
+                timeout=5
+            )
+            response.raise_for_status()
+            preference_data = response.json().get('preference', {})
 
-        delay_options = ["at now free", "late of 30 minutes", "late of 1 hour", "late of 3 hours"]
-        delay_combo = QComboBox()
-        delay_combo.addItems(delay_options)
-        delay_combo.setStyleSheet("padding: 5px;")
-        layout.addWidget(delay_combo, alignment=Qt.AlignCenter)
+            # If message already has delay preference, display directly without dialog
+            if preference_data:
+                logging.debug(f"Content {content_id} already has delay preference, displaying directly")
+                self.display_content(content)
+                return
 
-        ok_button = QPushButton("OK")
-        ok_button.setStyleSheet("background-color: #b8a9d9; color: #ffffff; padding: 5px; font-weight: bold;")
-        ok_button.clicked.connect(lambda: self.handle_delay_choice(content, delay_combo.currentText(), dialog))
-        layout.addWidget(ok_button, alignment=Qt.AlignCenter)
+            # Show dialog only for completely new messages
+            logging.debug(f"Showing message dialog for new content {content_id}")
+            dialog = QDialog(self)
+            dialog.setWindowTitle("New Message Notification")
+            dialog.setStyleSheet("background-color: #ece4f7;")
+            dialog.setFixedSize(300, 200)
+            dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
 
-        opacity_effect = QGraphicsOpacityEffect(dialog)
-        dialog.setGraphicsEffect(opacity_effect)
-        self.dialog_animation = QPropertyAnimation(opacity_effect, b"opacity")
-        self.dialog_animation.setDuration(500)
-        self.dialog_animation.setStartValue(0.0)
-        self.dialog_animation.setEndValue(1.0)
-        self.dialog_animation.setEasingCurve(QEasingCurve.InOutQuad)
-        self.dialog_animation.start()
+            layout = QVBoxLayout(dialog)
+            label = QLabel("You have a new message, are you free?")
+            label.setStyleSheet("color: #333333; font-size: 14px;")
+            layout.addWidget(label, alignment=Qt.AlignCenter)
 
-        screen = QApplication.primaryScreen().geometry()
-        dialog.move((screen.width() - 300) // 2, (screen.height() - 200) // 2)
-        logging.debug(f"Showing dialog for content {content['id']}, visible: {dialog.isVisible()}")
-        dialog.exec()
-        logging.debug(f"Dialog closed for content {content['id']}, visible: {dialog.isVisible()}")
+            delay_options = ["Play Immediate", "Play within 15 minutes", "Play within 30 minutes", 
+                            "Play within 1 hour", "Play within 3 hours"]
+            delay_combo = QComboBox()
+            delay_combo.addItems(delay_options)
+            delay_combo.setStyleSheet("""
+                QComboBox {
+                    padding: 5px;
+                    color: #000000;
+                    background-color: #ffffff;
+                    border: 1px solid #b8a9d9;
+                    border-radius: 5px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+                QComboBox QAbstractItemView {
+                    color: #000000;
+                    background-color: #ffffff;
+                    selection-background-color: #b8a9d9;
+                    selection-color: #ffffff;
+                }
+            """)
+            layout.addWidget(delay_combo, alignment=Qt.AlignCenter)
+
+            ok_button = QPushButton("OK")
+            ok_button.setStyleSheet("background-color: #b8a9d9; color: #ffffff; padding: 5px; font-weight: bold;")
+            ok_button.clicked.connect(lambda: self.handle_delay_choice(content, delay_combo.currentText(), dialog))
+            layout.addWidget(ok_button, alignment=Qt.AlignCenter)
+
+            screen = QApplication.primaryScreen().geometry()
+            dialog.move((screen.width() - 300) // 2, (screen.height() - 200) // 2)
+            dialog.exec()
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error checking message preferences: {str(e)}")
+            # If we can't check preferences, show content directly to be safe
+            self.display_content(content)
+
+    def display_content(self, content):
+        self.current_content_index = self.all_content.index(content) if content in self.all_content else 0
+        self.stack.setCurrentWidget(self.content_page)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        logging.debug(f"Displaying content window for content {content['id']}, window visible: {self.isVisible()}, geometry: {self.geometry()}")
+        self.show_content()
+        self.processed_content_ids.add(content['id'])  # Mark as processed
+        self.save_processed_content_ids()  # Save to file
 
     def handle_delay_choice(self, content, delay_choice, dialog):
+        """Handle delay choice and mark content as processed for immediate display."""
         logging.debug(f"Handling delay choice '{delay_choice}' for content {content['id']}")
+        content_id = content['id']
         delay_seconds = 0
-        if delay_choice == "late of 30 minutes":
+        if delay_choice == "Play within 15 minutes":
+            delay_seconds = 15 * 60
+        elif delay_choice == "Play within 30 minutes":
             delay_seconds = 30 * 60
-        elif delay_choice == "late of 1 hour":
+        elif delay_choice == "Play within 1 hour":
             delay_seconds = 60 * 60
-        elif delay_choice == "late of 3 hours":
+        elif delay_choice == "Play within 3 hours":
             delay_seconds = 3 * 60 * 60
 
         try:
-            logging.debug(f"Setting delay choice '{delay_choice}' for content {content['id']}")
+            logging.debug(f"Setting delay choice '{delay_choice}' for content {content_id}")
+            # Format the datetime without microseconds
+            current_time = datetime.now(timezone.utc).replace(microsecond=0)
+            display_time = (current_time + timedelta(seconds=delay_seconds)).isoformat()
+
             response = requests.post(
                 f"{self.server_url}/set_message_delay",
                 json={
                     "employee_id": self.employee_id,
-                    "content_id": content['id'],
-                    "delay_choice": delay_choice
+                    "content_id": content_id,
+                    "delay_choice": delay_choice,
+                    "display_time": display_time  # Send formatted time
                 },
                 timeout=10,
                 allow_redirects=True
             )
             logging.debug(f"set_message_delay response: status={response.status_code}, text={response.text}")
             if response.status_code == 302:
-                logging.warning(f"Redirect detected for set_message_delay to {response.headers.get('Location')}, proceeding to display content {content['id']}")
+                logging.warning(f"Redirect detected for set_message_delay to {response.headers.get('Location')}, proceeding to display content {content_id}")
             else:
                 response.raise_for_status()
-                logging.info(f"Delay choice {delay_choice} set for content {content['id']}")
+                logging.info(f"Delay choice {delay_choice} set for content {content_id}")
         except requests.exceptions.RequestException as e:
-            logging.error(f"Error setting delay choice for content {content['id']}: {str(e)}")
+            logging.error(f"Error setting delay choice for content {content_id}: {str(e)}")
             QMessageBox.warning(self, "Warning", f"Failed to set delay choice: {str(e)}. Displaying content anyway.")
 
         try:
             if delay_seconds == 0:
-                logging.debug(f"Displaying content {content['id']} immediately")
+                logging.debug(f"Displaying content {content_id} immediately")
+                self.processed_content_ids.add(content_id)  
+                self.save_processed_content_ids()  
                 self.show()
                 self.raise_()
                 self.activateWindow()
@@ -801,16 +914,15 @@ class StudentApp(QMainWindow):
                 self.display_content(content)
             else:
                 timer_id = QTimer.singleShot(int(delay_seconds * 1000), lambda: self.display_content(content))
-                self.pending_display[content['id']] = timer_id
-                logging.debug(f"Scheduled display for content {content['id']} after {delay_seconds} seconds")
+                self.pending_display[content_id] = timer_id
+                logging.debug(f"Scheduled display for content {content_id} after {delay_seconds} seconds")
         except Exception as e:
-            logging.error(f"Error displaying content {content['id']}: {str(e)}")
+            logging.error(f"Error displaying content {content_id}: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to display content: {str(e)}")
         finally:
             dialog.close()
             if delay_seconds != 0:
                 self.hide()
-
 
     def check_content(self):
         while self.running:
@@ -822,25 +934,24 @@ class StudentApp(QMainWindow):
                 self.notifications = data.get('notifications', [])
                 new_content = data.get('content', [])
 
-                # Fetch updated view data to ensure status icons are current
                 self.fetch_views()
 
                 current_ids = {c['id'] for c in self.all_content}
-                new_messages = [c for c in new_content if c['id'] not in current_ids]
+                new_messages = [c for c in new_content if c['id'] not in current_ids and c['id'] not in self.processed_content_ids and self.viewed_durations.get(c['id'], 0) <= 30]
                 logging.debug(f"New messages detected: {[c['id'] for c in new_messages]}")
                 for content in new_content:
                     if content['id'] not in current_ids:
                         self.all_content.append(content)
 
                 for content in new_messages:
-                    if content['id'] not in self.processed_content_ids:
+                    if content['id'] not in self.processed_content_ids and content['id'] not in self.pending_display:
                         logging.debug(f"Emitting signal for new content {content['id']}")
                         self.new_content_signal.emit(content)
 
                 current_time = datetime.now(timezone.utc)
                 for content in new_content:
-                    if content['id'] in self.processed_content_ids or content['id'] in self.pending_display:
-                        logging.debug(f"Skipping content {content['id']} (processed or pending)")
+                    if content['id'] in self.processed_content_ids or content['id'] in self.pending_display or self.viewed_durations.get(content['id'], 0) > 30:
+                        logging.debug(f"Skipping content {content['id']} (processed: {content['id'] in self.processed_content_ids}, pending: {content['id'] in self.pending_display}, viewed_duration: {self.viewed_durations.get(content['id'], 0)})")
                         continue
                     try:
                         preference_response = requests.get(f"{self.server_url}/message_preferences/{self.employee_id}/{content['id']}", timeout=5)
@@ -850,43 +961,31 @@ class StudentApp(QMainWindow):
                         display_time = preference_data.get('display_time')
                         if display_time:
                             display_time = datetime.fromisoformat(display_time)
-                            if display_time <= current_time:
+                            if display_time <= current_time and content['id'] not in self.processed_content_ids and self.viewed_durations.get(content['id'], 0) <= 30:
                                 logging.debug(f"Displaying content {content['id']} as display_time reached")
                                 QTimer.singleShot(0, lambda c=content: self.display_content(c))
                                 if content['id'] in self.pending_display:
                                     del self.pending_display[content['id']]
                     except requests.exceptions.RequestException as e:
                         logging.error(f"Error fetching preference for content {content['id']}: {str(e)}")
-                        if content['id'] not in self.processed_content_ids:
+                        if content['id'] not in self.processed_content_ids and content['id'] not in self.pending_display and self.viewed_durations.get(content['id'], 0) <= 30:
                             logging.debug(f"Fallback: Emitting signal for content {content['id']} due to preference fetch failure")
                             self.new_content_signal.emit(content)
 
-                try:
-                    requests.post(f"{self.server_url}/update_status", json={
-                        "employee_id": self.employee_id,
-                        "status": "online",
-                        "app_running": True,
-                        "ip": self.ip,
-                        "device_type": self.device_type,
-                        "hostname": self.hostname,  # Add hostname
-                        "email": self.host_email    # Add email
-                    }, timeout=5)
-                except requests.exceptions.RequestException as e:
-                    logging.error(f"Error updating status: {str(e)}")
+                requests.post(f"{self.server_url}/update_status", json={
+                    "employee_id": self.employee_id,
+                    "status": "online",
+                    "app_running": True,
+                    "ip": self.ip,
+                    "device_type": self.device_type,
+                    "hostname": self.hostname,
+                    "email": self.host_email
+                }, timeout=5)
 
             except requests.exceptions.RequestException as e:
                 logging.error(f"Error checking content: {str(e)}")
 
             time.sleep(60)
-
-    def display_content(self, content):
-        self.current_content_index = self.all_content.index(content) if content in self.all_content else 0
-        self.stack.setCurrentWidget(self.content_page)
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        logging.debug(f"Displaying content window for content {content['id']}, window visible: {self.isVisible()}, geometry: {self.geometry()}")
-        self.show_content()
 
     def start_countdown(self):
         self.countdown_remaining = self.countdown_seconds
@@ -924,6 +1023,7 @@ class StudentApp(QMainWindow):
             logging.debug(f"Countdown resumed with {self.countdown_remaining} seconds remaining")
 
 
+
     def show_content(self):
         if not self.all_content:
             self.message_display.setText("")
@@ -933,18 +1033,19 @@ class StudentApp(QMainWindow):
             return
 
         content = self.all_content[self.current_content_index]
+        content_id = content['id']
+        if content_id not in self.processed_content_ids:
+            self.processed_content_ids.add(content_id)
+            self.save_processed_content_ids()
+            logging.debug(f"Marked content {content_id} as processed in show_content")
 
-        # Set title and ensure visibility
         self.title_label.setText(content.get('title', 'No Title'))
         self.title_label.setVisible(True)
-
-        # Set message text
         self.message_display.setText(content['text'])
 
-        # Track view start time for duration calculation
         self.view_start_time = datetime.now()
-        if content['id'] not in self.viewed_durations:
-            self.viewed_durations[content['id']] = 0
+        if content_id not in self.viewed_durations:
+            self.viewed_durations[content_id] = 0
 
         # Reset media player and graphics view
         if self.media_player:
@@ -961,19 +1062,19 @@ class StudentApp(QMainWindow):
             self.graphics_view = None
             self.scene = None
 
-        # Remove previous content_container if exists
+        # Remove previous content_container
         if hasattr(self, 'content_container') and self.content_container:
             self.main_content_layout.removeWidget(self.content_container)
             self.content_container.deleteLater()
             self.content_container = None
 
-        # Remove buttons from main_content_layout to reposition
+        # Remove buttons and other widgets
         self.main_content_layout.removeWidget(self.button_frame)
         self.main_content_layout.removeWidget(self.feedback_entry)
         self.main_content_layout.removeWidget(self.submit_button)
         self.main_content_layout.removeWidget(self.nav_frame)
         self.main_content_layout.removeWidget(self.minimize_button)
-        self.main_content_layout.removeWidget(self.email_display.parent())  # Remove left_info_widget
+        self.main_content_layout.removeWidget(self.email_display.parent())
 
         # Create buttons_container
         buttons_container = QWidget()
@@ -994,41 +1095,46 @@ class StudentApp(QMainWindow):
 
         self.loading_bar.setVisible(has_image or has_video or has_both)
 
-        self.start_countdown()
-
         if has_both or has_video or has_image:
             content_container_layout = QHBoxLayout(self.content_container)
-            # Left side: text, buttons, and info
             left_container = QWidget()
             left_layout = QVBoxLayout(left_container)
             left_layout.addWidget(self.message_display)
             left_layout.addWidget(buttons_container)
-            left_layout.addWidget(self.email_display.parent())  # Add left_info_widget back
+            left_layout.addWidget(self.email_display.parent())
             content_container_layout.addWidget(left_container, 1)
 
-            # Right side: media
             right_container = QWidget()
             right_layout = QVBoxLayout(right_container)
 
             if has_both or has_video:
-                # Video container
                 video_container = QWidget()
                 video_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                 video_layout = QVBoxLayout(video_container)
                 try:
-                    response = requests.head(content['url'], timeout=5, allow_redirects=True)
-                    if response.status_code != 200:
-                        raise ValueError(f"Video URL inaccessible: {response.status_code}")
+                    logging.debug(f"Validating video URL: {content['url']}")
+                    # Use GET with Range header to verify file accessibility and content type
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Range': 'bytes=0-1023'}
+                    response = requests.get(content['url'], headers=headers, timeout=10, allow_redirects=True)
+                    logging.debug(f"Video URL response: status={response.status_code}, headers={response.headers}")
+                    if response.status_code not in (200, 206):
+                        raise ValueError(f"Video URL inaccessible: status code {response.status_code}")
+                    content_type = response.headers.get('Content-Type', '')
+                    if not content_type.startswith('video/mp4'):
+                        raise ValueError(f"Unsupported video content type: {content_type}")
+                    video_url = response.url  # Use the final URL after redirects
+                    logging.debug(f"Final video URL after redirects: {video_url}")
 
                     self.media_player = QMediaPlayer()
                     self.audio_output = QAudioOutput()
                     self.media_player.setAudioOutput(self.audio_output)
-                    self.media_player.setSource(QUrl(content['url']))
+                    self.media_player.setSource(QUrl.fromEncoded(video_url.encode('utf-8')))
                     self.video_widget = QVideoWidget()
                     self.video_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                     self.video_widget.setMinimumSize(150 if has_both else 300, 100 if has_both else 200)
                     self.media_player.setVideoOutput(self.video_widget)
                     video_layout.addWidget(self.video_widget)
+                    logging.debug(f"Video widget created, visible: {self.video_widget.isVisible()}, geometry: {self.video_widget.geometry()}, parent: {self.video_widget.parent()}")
 
                     video_button_frame = QFrame()
                     video_button_layout = QHBoxLayout(video_button_frame)
@@ -1047,25 +1153,49 @@ class StudentApp(QMainWindow):
                     video_button_layout.addWidget(self.play_again_button)
 
                     video_layout.addWidget(video_button_frame)
-                    self.video_widget.setVisible(True)
+                    self.video_widget.show()
+                    video_container.show()
+                    logging.debug(f"After show(): video_widget visible: {self.video_widget.isVisible()}, video_container visible: {video_container.isVisible()}")
                     self.media_player.play()
+                    logging.debug(f"Media player state: {self.media_player.playbackState()}, URL: {video_url}")
                     self.media_player.mediaStatusChanged.connect(self.handle_media_status)
                     self.media_player.errorOccurred.connect(self.handle_media_error)
                     logging.debug(f"Video playing for content {content['id']}")
+                    # Force layout update
+                    video_container.update()
+                    right_container.update()
+                    self.content_container.update()
+                    self.central_widget.update()
+                    self.update()
+                    # Process Qt events to ensure visibility
+                    QApplication.processEvents()
+                    logging.debug(f"After event processing: video_widget visible: {self.video_widget.isVisible()}, video_container visible: {video_container.isVisible()}, right_container visible: {right_container.isVisible()}, content_container visible: {self.content_container.isVisible()}")
                 except Exception as e:
-                    logging.error(f"Error loading video for content {content['id']}: {str(e)}")
-                    error_label = QLabel("Failed to load video")
+                    error_msg = f"Error loading video for content {content['id']}: {str(e)}"
+                    logging.error(error_msg)
+                    error_label = QLabel(error_msg)
                     error_label.setStyleSheet("color: #ff0000; font-size: 14px;")
                     video_layout.addWidget(error_label, alignment=Qt.AlignCenter)
+                    QMessageBox.warning(self, "Video Error", f"Failed to play video: {str(e)}. Ensure the video is a valid MP4 and accessible.")
+                    # Add placeholder image
+                    placeholder_path = resource_path("logo_s_n.png")
+                    if os.path.exists(placeholder_path):
+                        placeholder = QImage(placeholder_path)
+                        if not placeholder.isNull():
+                            self.scene = QGraphicsScene()
+                            self.scene.addPixmap(QPixmap.fromImage(placeholder))
+                            self.graphics_view = QGraphicsView(video_container)
+                            self.graphics_view.setScene(self.scene)
+                            self.graphics_view.setAlignment(Qt.AlignCenter)
+                            self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                            video_layout.addWidget(self.graphics_view)
                 right_layout.addWidget(video_container, 1)
+                logging.debug(f"Video container added to right_layout, visible: {video_container.isVisible()}, right_container visible: {right_container.isVisible()}")
 
             if has_both or has_image:
-                # Image container
                 image_container = QWidget()
                 image_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                 image_layout = QVBoxLayout(image_container)
-                image_layout.setContentsMargins(0, 0, 0, 0)
-                image_layout.setSpacing(0)
                 try:
                     response = requests.get(content['image_url'], timeout=10)
                     response.raise_for_status()
@@ -1082,29 +1212,21 @@ class StudentApp(QMainWindow):
                     self.graphics_view.setAlignment(Qt.AlignCenter)
                     self.graphics_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                     image_layout.addWidget(self.graphics_view)
-
-                    # Default zoom out
                     self.graphics_view.scale(0.4, 0.4)
-
                     zoom_frame = QFrame()
                     zoom_layout = QHBoxLayout(zoom_frame)
-                    zoom_layout.setContentsMargins(0, 0, 0, 0)
-                    zoom_layout.setSpacing(5)
-
                     zoom_in_btn = QPushButton("+", image_container)
                     zoom_in_btn.setFixedSize(30, 30)
                     zoom_in_btn.clicked.connect(self.zoom_in_image)
                     zoom_in_btn.enterEvent = lambda event: self.animate_button(zoom_in_btn, True)
                     zoom_in_btn.leaveEvent = lambda event: self.animate_button(zoom_in_btn, False)
                     zoom_layout.addWidget(zoom_in_btn)
-
                     zoom_out_btn = QPushButton("-", image_container)
                     zoom_out_btn.setFixedSize(30, 30)
                     zoom_out_btn.clicked.connect(self.zoom_out_image)
                     zoom_out_btn.enterEvent = lambda event: self.animate_button(zoom_out_btn, True)
                     zoom_out_btn.leaveEvent = lambda event: self.animate_button(zoom_out_btn, False)
                     zoom_layout.addWidget(zoom_out_btn)
-
                     zoom_frame.setLayout(zoom_layout)
                     image_layout.addWidget(zoom_frame, alignment=Qt.AlignCenter)
                     logging.debug(f"Image loaded for content {content['id']}")
@@ -1113,7 +1235,7 @@ class StudentApp(QMainWindow):
                     error_label = QLabel("Image failed to load (showing placeholder)")
                     error_label.setStyleSheet("color: #ff0000; font-size: 14px;")
                     image_layout.addWidget(error_label, alignment=Qt.AlignCenter)
-                    placeholder_path = resource_path("logo_s.png")
+                    placeholder_path = resource_path("logo_s_n.png")
                     if os.path.exists(placeholder_path):
                         placeholder = QImage(placeholder_path)
                         if not placeholder.isNull():
@@ -1126,30 +1248,42 @@ class StudentApp(QMainWindow):
                             image_layout.addWidget(self.graphics_view)
                 right_layout.addWidget(image_container, 1)
 
-                content_container_layout.addWidget(right_container, 1)
+            content_container_layout.addWidget(right_container, 1)
         else:
-            # Only text
             content_container_layout = QVBoxLayout(self.content_container)
             content_container_layout.addWidget(self.message_display)
-            # Add buttons back below content
             self.main_content_layout.insertWidget(3, self.button_frame)
             self.main_content_layout.insertWidget(4, self.feedback_entry)
             self.main_content_layout.insertWidget(5, self.submit_button)
             self.main_content_layout.insertWidget(6, self.nav_frame)
             self.main_content_layout.insertWidget(7, self.minimize_button)
-            self.main_content_layout.insertWidget(8, self.email_display.parent())  # Add left_info_widget back
+            self.main_content_layout.insertWidget(8, self.email_display.parent())
+
+        if content.get('type') not in ['video', 'both']:
+            self.countdown_seconds = 60
+            self.start_countdown()
+        # else: countdown will be started in handle_media_status for video/both
 
         QTimer.singleShot(30000, lambda: self.record_view(content['id']))
         self.loading_bar.setVisible(False)
-
         self.processed_content_ids.add(content['id'])
         logging.debug(f"Marked content {content['id']} as processed")
         self.update_scroll_signal.emit()
         logging.debug(f"Content displayed, window visible: {self.isVisible()}, geometry: {self.geometry()}")
+        # Ensure the main window and layout are updated
+        self.content_container.show()
+        self.central_widget.update()
+        self.update()
+        QApplication.processEvents()
+        logging.debug(f"Final visibility check: content_container visible: {self.content_container.isVisible()}")
 
     def handle_media_error(self, error):
-        logging.error(f"Media player error: {error}, {self.media_player.errorString()}")
-        QMessageBox.warning(self, "Media Error", f"Failed to play video: {self.media_player.errorString()}")
+        error_msg = f"Media player error: {error}, {self.media_player.errorString()}, URL: {self.media_player.source().toString() if self.media_player else 'N/A'}"
+        logging.error(error_msg)
+        QMessageBox.warning(self, "Media Error", f"Failed to play video: {self.media_player.errorString()}. Ensure the video is a valid MP4 with supported codecs (e.g., H.264/AAC) and the URL is accessible.")
+        self.countdown_seconds = 60
+        if not self.countdown_active:
+            self.start_countdown()
 
     def zoom_in_image(self):
         if self.graphics_view:
@@ -1174,6 +1308,13 @@ class StudentApp(QMainWindow):
             if self.play_again_button:
                 self.play_again_button.setEnabled(False)
                 logging.debug("Video playing, disabling Play Again button")
+        elif status == QMediaPlayer.LoadedMedia:
+            duration = self.media_player.duration()
+            if duration > 0:
+                video_sec = duration / 1000
+                self.countdown_seconds = int(video_sec + 30)
+                self.start_countdown()
+                logging.debug(f"Video duration loaded: {video_sec} seconds, setting countdown to {self.countdown_seconds}")
 
     def play_again(self):
         if self.media_player:
@@ -1271,8 +1412,7 @@ class StudentApp(QMainWindow):
             duration = (datetime.now() - self.view_start_time).total_seconds()
             self.viewed_durations[content_id] = max(self.viewed_durations.get(content_id, 0), duration)
         else:
-            logging.warning(f"No view_start_time for content {content_id}, using existing duration")
-
+            logging.warning(f"No view_start_time for content {content_id}, using existing existing")
         logging.debug(f"Recording view for content {content_id} with duration {self.viewed_durations.get(content_id, 0)} seconds")
         try:
             response = requests.post(
@@ -1441,7 +1581,9 @@ class StudentApp(QMainWindow):
                 "status": "offline",
                 "app_running": False,
                 "ip": self.ip,
-                "device_type": self.device_type
+                "device_type": self.device_type,
+                "hostname": self.hostname,
+                "email": self.host_email
             }, timeout=5)
             logging.info("Status updated to offline on exit")
         except requests.exceptions.RequestException as e:
@@ -1490,28 +1632,39 @@ class StudentApp(QMainWindow):
                 time.sleep(2 ** attempt)
 
     # New method for reporting update status
-    def report_update_status(self, status, message=None):
-        """Report update status to server."""
-        if not self.employee_id or not self.device_id:
-            logging.warning("Cannot report update status: missing employee_id or device_id")
-            return
-        try:
-            response = requests.post(
-                f"{self.server_url}/update_status",
-                json={
-                    "employee_id": self.employee_id,
-                    "device_id": self.device_id,
-                    "current_version": self.APP_VERSION,
-                    "update_status": status,
-                    "error_message": message if status == 'failed' else None
-                },
-                timeout=5
-            )
-            response.raise_for_status()
-            logging.info(f"Reported update status: {status}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error reporting update status: {str(e)}")
-    
+    def report_update_status(self, update_status, error_message=None):
+        retries = 3
+        for attempt in range(retries):
+            try:
+                payload = {
+                    'employee_id': self.employee_id,
+                    'status': 'online',
+                    'app_running': True,
+                    'ip': self.get_ip(),
+                    'device_type': self.get_device_type(),
+                    'hostname': self.get_hostname(),
+                    'email': self.host_email,
+                    'current_version': self.APP_VERSION,
+                    'device_id': self.device_id,
+                    'update_status': update_status,
+                    'error_message': error_message
+                }
+                logging.debug(f"Sending update_status payload: {payload}")
+                response = requests.post(
+                    f"{self.SERVER_URL}/update_status",
+                    json=payload,
+                    timeout=5
+                )
+                response.raise_for_status()
+                logging.info(f"Update status reported: {update_status}")
+                return
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Error reporting update status (attempt {attempt + 1}/{retries}): {str(e)}")
+                if attempt < retries - 1:
+                    time.sleep(2)
+                else:
+                    logging.error(f"Failed to report update status after {retries} attempts")
+
     def show_selected_content(self, index):
         logging.debug(f"Selected content index: {index}")
         sorted_content = sorted(
@@ -1530,5 +1683,4 @@ class StudentApp(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = StudentApp()
-    window.show()
     sys.exit(app.exec())
