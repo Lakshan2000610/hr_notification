@@ -1,0 +1,161 @@
+-- =============================================
+-- AcornHUB MySQL Database Schema
+-- Migrated from Supabase (PostgreSQL)
+-- =============================================
+
+-- Disable foreign key checks temporarily
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- Drop tables in correct order
+DROP TABLE IF EXISTS views;
+DROP TABLE IF EXISTS reactions;
+DROP TABLE IF EXISTS message_preferences;
+DROP TABLE IF EXISTS feedback;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS scheduled_content;
+DROP TABLE IF EXISTS device_update_status;
+DROP TABLE IF EXISTS employee_devices;
+DROP TABLE IF EXISTS employees;
+
+-- Enable foreign key checks
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- =============================================
+-- 1. employees
+-- =============================================
+CREATE TABLE employees (
+    id VARCHAR(36) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 2. employee_devices
+-- =============================================
+CREATE TABLE employee_devices (
+    employee_id VARCHAR(36) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    active_status TINYINT(1) NOT NULL DEFAULT 0,
+    ip VARCHAR(45),
+    device_type VARCHAR(100),
+    hostname VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    last_seen DATETIME NOT NULL,
+    app_running TINYINT(1) NOT NULL,
+    PRIMARY KEY (employee_id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 3. scheduled_content
+-- =============================================
+CREATE TABLE scheduled_content (
+    id VARCHAR(36) NOT NULL,
+    type ENUM('text', 'image', 'video', 'both') NOT NULL,
+    title VARCHAR(255),
+    `text` TEXT,
+    image_url VARCHAR(500),
+    scheduled_time DATETIME NOT NULL,
+    employees JSON NOT NULL,  -- Array of employee IDs: ["emp1", "emp2"]
+    url VARCHAR(500),
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 4. notifications
+-- =============================================
+CREATE TABLE notifications (
+    id INT AUTO_INCREMENT,
+    content_id VARCHAR(36),
+    employees JSON NOT NULL,
+    `time` DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 5. feedback
+-- =============================================
+CREATE TABLE feedback (
+    id INT AUTO_INCREMENT,
+    content_id VARCHAR(36),
+    employee_id VARCHAR(36),
+    feedback TEXT NOT NULL,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 6. message_preferences
+-- =============================================
+CREATE TABLE message_preferences (
+    id CHAR(36) NOT NULL DEFAULT (UUID()),
+    employee_id VARCHAR(36) NOT NULL,
+    content_id VARCHAR(36) NOT NULL,
+    delay_choice VARCHAR(50),
+    display_time DATETIME,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_preference (employee_id, content_id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 7. reactions
+-- =============================================
+CREATE TABLE reactions (
+    id CHAR(36) NOT NULL DEFAULT (UUID()),
+    content_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    reaction ENUM('like', 'unlike', 'heart', 'cry') NOT NULL,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 8. views
+-- =============================================
+CREATE TABLE views (
+    id CHAR(36) NOT NULL DEFAULT (UUID()),
+    content_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    viewed_duration FLOAT NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_view (content_id, employee_id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- 9. device_update_status
+-- =============================================
+CREATE TABLE device_update_status (
+    id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    status ENUM('success', 'pending', 'failed') NOT NULL,
+    last_attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    error_message TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY (device_id) REFERENCES employee_devices(employee_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =============================================
+-- Indexes for Performance
+-- =============================================
+CREATE INDEX idx_employees_email ON employees(email);
+CREATE INDEX idx_scheduled_time ON scheduled_content(scheduled_time);
+CREATE INDEX idx_notifications_time ON notifications(`time`);
+CREATE INDEX idx_views_employee ON views(employee_id);
+CREATE INDEX idx_views_content ON views(content_id);
+CREATE INDEX idx_reactions_content ON reactions(content_id);
+CREATE INDEX idx_feedback_content ON feedback(content_id);

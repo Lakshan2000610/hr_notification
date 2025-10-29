@@ -55,7 +55,7 @@ logging.basicConfig(
 )
 
 class StudentApp(QMainWindow):
-    APP_VERSION = "1.0.3"
+    APP_VERSION = "1.1.2"
     SERVER_URL = "https://hrnotification.acorngroup.lk"
     new_content_signal = Signal(dict)
     update_scroll_signal = Signal()
@@ -64,6 +64,7 @@ class StudentApp(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"AcornHUB v{self.APP_VERSION}")
         self.resize(1200, 600)
+        self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
         self.setStyleSheet("""
             QMainWindow { background-color: #ece4f7; }
             QLabel { color: #333333; font-size: 14px; }
@@ -126,7 +127,7 @@ class StudentApp(QMainWindow):
 
         # Check registration status and decide initial page
         if self.employee_id and self.employee_email:
-            self.validate_existing_registration()
+            self.attempt_validate_existing()
             if self.registered:
                 self.email_display.setText(f"Email: {self.employee_email}")
                 self.stack.setCurrentWidget(self.content_page)
@@ -142,6 +143,69 @@ class StudentApp(QMainWindow):
             self.stack.setCurrentWidget(self.initial_page)
             self.show_window()
             QTimer.singleShot(240000, self.check_for_updates) # Check for updates after 4 minutes
+
+    def create_network_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Connection Issue")
+        dialog.setStyleSheet("background-color: #ece4f7;")
+        dialog.setFixedSize(350, 120)
+        dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint | Qt.WindowTitleHint | Qt.WindowMinimizeButtonHint)
+        layout = QVBoxLayout(dialog)
+        label = QLabel("Please connect to your network.\nI am AcornHUB")
+        label.setStyleSheet("color: #333333; font-size: 14px;")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        ok_button = QPushButton("OK")
+        ok_button.setStyleSheet("background-color: #b8a9d9; color: #ffffff; padding: 8px; border: none; border-radius: 5px; font-weight: bold;")
+        ok_button.clicked.connect(dialog.accept)
+        layout.addWidget(ok_button, alignment=Qt.AlignCenter)
+        return dialog
+
+    def attempt_validate_email(self, email):
+        try:
+            logging.debug(f"Sending request to {self.server_url}/get_or_create_employee with email {email}")
+            response = requests.post(f"{self.server_url}/get_or_create_employee", json={"email": email}, timeout=5)
+            logging.debug(f"Response status: {response.status_code}, body: {response.text}")
+            response.raise_for_status()
+            self.employee_id = response.json()['employee_id']
+            logging.info(f"Got/created employee_id: {self.employee_id} for email {email}")
+            self.setup_logging()  # Set up logging after employee_id is available
+            self.fetch_views()  # Fetch views after employee_id is set
+            self.stack.setCurrentWidget(self.content_page)
+            self.email_display.setText(f"Email: {email}")
+            self.register_device_request()
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error details: {str(e)}")
+            dialog = self.create_network_dialog()
+            if dialog.exec() == QDialog.Accepted:
+                self.attempt_validate_email(email)
+
+    def attempt_validate_existing(self):
+        if not self.employee_id or not self.employee_email:
+            logging.warning("No employee_id or employee_email for validation")
+            self.registered = False
+            self.stack.setCurrentWidget(self.initial_page)
+            return
+        try:
+            response = requests.post(f"{self.server_url}/get_or_create_employee", json={"email": self.employee_email}, timeout=5)
+            response.raise_for_status()
+            server_employee_id = response.json().get('employee_id')
+            if server_employee_id == self.employee_id:
+                self.registered = True
+                logging.info(f"Validated existing registration for employee_id {self.employee_id}")
+                self.register_device_request(is_re_registration=True)
+            else:
+                logging.warning(f"Server employee_id {server_employee_id} does not match stored employee_id {self.employee_id}")
+                self.employee_id = None
+                self.employee_email = None
+                self.registered = False
+                self.is_first_registration = True
+                self.stack.setCurrentWidget(self.initial_page)
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error validating registration: {str(e)}")
+            dialog = self.create_network_dialog()
+            if dialog.exec() == QDialog.Accepted:
+                self.attempt_validate_existing()
 
     def get_ip(self):
         try:
@@ -228,37 +292,6 @@ class StudentApp(QMainWindow):
         except Exception as e:
             logging.error(f"Failed to save registration data: {str(e)}")
 
-    def validate_existing_registration(self):
-        """Validate existing employee_id with the server and proceed if valid."""
-        if not self.employee_id or not self.employee_email:
-            logging.warning("No employee_id or employee_email for validation")
-            self.registered = False
-            self.stack.setCurrentWidget(self.initial_page)
-            return
-        try:
-            response = requests.post(f"{self.server_url}/get_or_create_employee", json={"email": self.employee_email}, timeout=5)
-            response.raise_for_status()
-            server_employee_id = response.json().get('employee_id')
-            if server_employee_id == self.employee_id:
-                self.registered = True
-                logging.info(f"Validated existing registration for employee_id {self.employee_id}")
-                self.register_device_request(is_re_registration=True)
-            else:
-                logging.warning(f"Server employee_id {server_employee_id} does not match stored employee_id {self.employee_id}")
-                self.employee_id = None
-                self.employee_email = None
-                self.registered = False
-                self.is_first_registration = True
-                self.stack.setCurrentWidget(self.initial_page)
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error validating registration: {str(e)}")
-            self.notify_nonblocking("Validation Error", f"Failed to validate registration: {str(e)}", level='warning')
-            self.employee_id = None
-            self.employee_email = None
-            self.registered = False
-            self.is_first_registration = True
-            self.stack.setCurrentWidget(self.initial_page)
-
     def register_device_request(self, is_re_registration=False):
         """Register device with the server, show dialog only for first registration or errors."""
         logging.debug(f"Registering device for employee_id: {self.employee_id}, ip: {self.ip}, device_type: {self.device_type}, hostname: {self.hostname}, email: {self.host_email}, is_re_registration: {is_re_registration}")
@@ -281,7 +314,7 @@ class StudentApp(QMainWindow):
                     dialog.setWindowTitle("Registration")
                     dialog.setStyleSheet("background-color: #ece4f7;")
                     dialog.setFixedSize(300, 150)
-                    dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+                    dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
                     layout = QVBoxLayout(dialog)
                     label = QLabel("Registration Successful")
                     label.setStyleSheet("color: #333333; font-size: 14px;")
@@ -295,11 +328,12 @@ class StudentApp(QMainWindow):
             except requests.exceptions.RequestException as e:
                 logging.error(f"Device registration attempt {attempt + 1} failed: {str(e)}")
                 if attempt == retries - 1:
-                    self.notify_nonblocking("Registration Error", f"Failed to register device: {str(e)}", level='critical')
-                    self.registered = False
+                    dialog = self.create_network_dialog()
+                    if dialog.exec() == QDialog.Accepted:
+                        self.register_device_request(is_re_registration)
                     return
                 time.sleep(2)
-
+                
     def minimize_to_tray_and_close_dialog(self, dialog):
         """Minimize the app to tray and close the dialog."""
         self.minimize_to_tray()
@@ -404,14 +438,20 @@ class StudentApp(QMainWindow):
 
             # Create batch file to replace executable
             current_exe = sys.executable
+            exe_filename = os.path.basename(current_exe)
             batch_path = os.path.join(temp_dir, "update.bat")
             batch_content = f"""@echo off
-    timeout /t 3 /nobreak >nul
-    taskkill /IM app.exe /F >nul 2>&1
-    copy "{temp_exe_path}" "{current_exe}" /Y
-    start "" "{current_exe}"
-    del "{batch_path}"
-    """
+                timeout /t 5 /nobreak >nul
+                taskkill /IM {exe_filename} /F >nul 2>&1
+                copy "{temp_exe_path}" "{current_exe}" /Y
+                if %errorlevel% neq 0 (
+                    echo Copy failed!
+                    pause
+                ) else (
+                    start "" "{current_exe}"
+                    del "{batch_path}"
+                )
+                """
             with open(batch_path, 'w') as f:
                 f.write(batch_content)
 
@@ -422,7 +462,7 @@ class StudentApp(QMainWindow):
             self.report_update_status('success', f"Updated to version {new_version}")
 
             # Run batch file and exit
-            subprocess.Popen(batch_path, shell=True)
+            subprocess.Popen([batch_path], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
             self.close()
         except Exception as e:
             logging.error(f"Update failed: {str(e)}")
@@ -433,7 +473,7 @@ class StudentApp(QMainWindow):
                     logging.info(f"Cleaned up failed download: {temp_exe_path}")
                 except Exception as e:
                     logging.warning(f"Failed to clean up {temp_exe_path}: {str(e)}")
-    
+
     def fetch_views(self):
         """Fetch view data from server to populate viewed_durations."""
         retries = 3
@@ -453,7 +493,7 @@ class StudentApp(QMainWindow):
             except requests.exceptions.RequestException as e:
                 logging.error(f"Error fetching views, attempt {attempt + 1}: {str(e)}")
                 if attempt == retries - 1:
-                    self.notify_nonblocking("View Fetch Error", f"Failed to fetch view data after {retries} attempts: {str(e)}", level='warning')
+                    QMessageBox.warning(self, "Warning", f"Failed to fetch view data after {retries} attempts: {str(e)}")
                 time.sleep(2)  # Wait before retrying
 
     def get_device_type(self):
@@ -691,29 +731,6 @@ class StudentApp(QMainWindow):
             self.tray_icon.setContextMenu(menu)
             self.tray_icon.show()
 
-    def notify_nonblocking(self, title, message, level='warning'):
-        """Log the issue and show a non-blocking tray notification (if available).
-
-        This avoids modal QMessageBox dialogs which interrupt the user when the
-        network is flaky. Falls back to logging if tray is not available.
-        """
-        try:
-            if level == 'critical':
-                logging.error(f"{title}: {message}")
-            elif level == 'warning':
-                logging.warning(f"{title}: {message}")
-            else:
-                logging.info(f"{title}: {message}")
-
-            if self.tray_icon:
-                icon = QSystemTrayIcon.Warning if level == 'warning' else (
-                    QSystemTrayIcon.Critical if level == 'critical' else QSystemTrayIcon.Information
-                )
-                # Use a short timeout so notifications don't linger too long
-                self.tray_icon.showMessage(title, str(message), icon, 5000)
-        except Exception as e:
-            logging.error(f"Failed to show non-blocking notification: {e}")
-
     def show_window(self):
         self.show()
         self.raise_()
@@ -734,22 +751,7 @@ class StudentApp(QMainWindow):
             QMessageBox.critical(self, "Error", "Please enter a valid email address")
             return
         self.employee_email = email
-        logging.debug(f"Sending request to {self.server_url}/get_or_create_employee with email {email}")
-        try:
-            response = requests.post(f"{self.server_url}/get_or_create_employee", json={"email": email}, timeout=5)
-            logging.debug(f"Response status: {response.status_code}, body: {response.text}")
-            response.raise_for_status()
-            self.employee_id = response.json()['employee_id']
-            logging.info(f"Got/created employee_id: {self.employee_id} for email {email}")
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error details: {str(e)}")
-            self.notify_nonblocking("Registration Error", f"Failed to get/create employee: {str(e)}", level='warning')
-            return
-        self.setup_logging()  # Set up logging after employee_id is available
-        self.fetch_views()  # Fetch views after employee_id is set
-        self.stack.setCurrentWidget(self.content_page)
-        self.email_display.setText(f"Email: {email}")
-        self.register_device_request()
+        self.attempt_validate_email(email)
 
     def start_content_check(self):
         """Start the content check thread."""
@@ -801,7 +803,6 @@ class StudentApp(QMainWindow):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"Error checking content at startup: {str(e)}")
-            self.notify_nonblocking("Content Check Error", f"Failed to check content at startup: {str(e)}", level='warning')
             self.minimize_to_tray()
 
     def show_message_dialog(self, content):
@@ -829,7 +830,7 @@ class StudentApp(QMainWindow):
             dialog.setWindowTitle("New Message Notification")
             dialog.setStyleSheet("background-color: #ece4f7;")
             dialog.setFixedSize(300, 200)
-            dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+            dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
 
             layout = QVBoxLayout(dialog)
             label = QLabel("You have a new message, are you free?")
@@ -871,8 +872,7 @@ class StudentApp(QMainWindow):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"Error checking message preferences: {str(e)}")
-            # If we can't check preferences, show content directly to be safe and notify non-blocking
-            self.notify_nonblocking("Preference Check Error", f"Failed to check message preferences: {str(e)}", level='warning')
+            # If we can't check preferences, show content directly to be safe
             self.display_content(content)
 
     def display_content(self, content):
@@ -925,7 +925,7 @@ class StudentApp(QMainWindow):
                 logging.info(f"Delay choice {delay_choice} set for content {content_id}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error setting delay choice for content {content_id}: {str(e)}")
-            self.notify_nonblocking("Delay Choice Error", f"Failed to set delay choice: {str(e)}. Displaying content anyway.", level='warning')
+            QMessageBox.warning(self, "Warning", f"Failed to set delay choice: {str(e)}. Displaying content anyway.")
 
         try:
             if delay_seconds == 0:
@@ -943,7 +943,7 @@ class StudentApp(QMainWindow):
                 logging.debug(f"Scheduled display for content {content_id} after {delay_seconds} seconds")
         except Exception as e:
             logging.error(f"Error displaying content {content_id}: {str(e)}")
-            self.notify_nonblocking("Display Error", f"Failed to display content: {str(e)}", level='critical')
+            QMessageBox.critical(self, "Error", f"Failed to display content: {str(e)}")
         finally:
             dialog.close()
             if delay_seconds != 0:
@@ -993,7 +993,6 @@ class StudentApp(QMainWindow):
                                     del self.pending_display[content['id']]
                     except requests.exceptions.RequestException as e:
                         logging.error(f"Error fetching preference for content {content['id']}: {str(e)}")
-                        self.notify_nonblocking("Preference Fetch Error", f"Failed to fetch preference for content {content['id']}: {str(e)}", level='warning')
                         if content['id'] not in self.processed_content_ids and content['id'] not in self.pending_display and self.viewed_durations.get(content['id'], 0) <= 30:
                             logging.debug(f"Fallback: Emitting signal for content {content['id']} due to preference fetch failure")
                             self.new_content_signal.emit(content)
@@ -1010,7 +1009,6 @@ class StudentApp(QMainWindow):
 
             except requests.exceptions.RequestException as e:
                 logging.error(f"Error checking content: {str(e)}")
-                self.notify_nonblocking("Content Poll Error", f"Error checking content: {str(e)}", level='warning')
 
             time.sleep(60)
 
@@ -1203,8 +1201,7 @@ class StudentApp(QMainWindow):
                     error_label = QLabel(error_msg)
                     error_label.setStyleSheet("color: #ff0000; font-size: 14px;")
                     video_layout.addWidget(error_label, alignment=Qt.AlignCenter)
-                    # Avoid modal dialog on video/network errors; log and show tray notification instead
-                    self.notify_nonblocking("Video Error", f"Failed to play video: {str(e)}. Ensure the video is a valid MP4 and accessible.", level='warning')
+                    QMessageBox.warning(self, "Video Error", f"Failed to play video: {str(e)}. Ensure the video is a valid MP4 and accessible.")
                     # Add placeholder image
                     placeholder_path = resource_path("logo_s_n.png")
                     if os.path.exists(placeholder_path):
@@ -1308,10 +1305,7 @@ class StudentApp(QMainWindow):
     def handle_media_error(self, error):
         error_msg = f"Media player error: {error}, {self.media_player.errorString()}, URL: {self.media_player.source().toString() if self.media_player else 'N/A'}"
         logging.error(error_msg)
-        try:
-            self.notify_nonblocking("Media Error", f"Failed to play video: {self.media_player.errorString()}. Ensure the video is a valid MP4 with supported codecs (e.g., H.264/AAC) and the URL is accessible.", level='warning')
-        except Exception:
-            logging.debug("notify_nonblocking failed in handle_media_error")
+        QMessageBox.warning(self, "Media Error", f"Failed to play video: {self.media_player.errorString()}. Ensure the video is a valid MP4 with supported codecs (e.g., H.264/AAC) and the URL is accessible.")
         self.countdown_seconds = 60
         if not self.countdown_active:
             self.start_countdown()
@@ -1460,7 +1454,7 @@ class StudentApp(QMainWindow):
             logging.info(f"View recorded successfully for content_id {content_id}, response: {response.text}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Error recording view for content_id {content_id}: {str(e)}")
-            self.notify_nonblocking("Record View Error", f"Failed to record view: {str(e)}", level='warning')
+            QMessageBox.warning(self, "Warning", f"Failed to record view: {str(e)}")
 
         # Update sidebar via signal
         self.update_scroll_signal.emit()
@@ -1553,17 +1547,15 @@ class StudentApp(QMainWindow):
             self.start_reaction_animation(reaction)
         except requests.exceptions.RequestException as e:
             logging.error(f"Error sending reaction for content_id {content_id}: {str(e)}")
-            self.notify_nonblocking("Reaction Error", f"Failed to send reaction: {str(e)}", level='warning')
+            QMessageBox.critical(self, "Error", f"Failed to send reaction: {str(e)}")
 
     def submit_feedback(self):
         if not self.all_content:
-            # Keep this as critical because it's a local validation error unrelated to network
             QMessageBox.critical(self, "Error", "No content to provide feedback for")
             return
         
         feedback = self.feedback_entry.text().strip()
         if not feedback:
-            # Keep this as critical because it's a local validation error unrelated to network
             QMessageBox.critical(self, "Error", "Please enter feedback")
             return
         
@@ -1581,12 +1573,11 @@ class StudentApp(QMainWindow):
             )
             response.raise_for_status()
             logging.info(f"Feedback sent for content_id {content_id}")
-            # Use non-blocking notification to avoid interrupting the user
-            self.notify_nonblocking("Feedback", "Feedback submitted successfully", level='info')
+            QMessageBox.information(self, "Success", "Feedback submitted successfully")
             self.feedback_entry.clear()
         except requests.exceptions.RequestException as e:
             logging.error(f"Error sending feedback for content_id {content_id}: {str(e)}")
-            self.notify_nonblocking("Feedback Error", f"Failed to send feedback: {str(e)}", level='warning')
+            QMessageBox.critical(self, "Error", f"Failed to send feedback: {str(e)}")
 
     def minimize_to_tray(self):
         self.hide()
@@ -1662,7 +1653,7 @@ class StudentApp(QMainWindow):
                 logging.error(f"Error updating status, attempt {attempt + 1}: {str(e)}")
                 if attempt == retries - 1:
                     logging.warning("All status update attempts failed")
-                    self.notify_nonblocking("Status Update Error", f"Failed to update status: {str(e)}", level='warning')
+                    QMessageBox.warning(self, "Warning", f"Failed to update status: {str(e)}")
                 time.sleep(2 ** attempt)
 
     # New method for reporting update status
