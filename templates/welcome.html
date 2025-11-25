@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AcornHUB </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* small helper to better match rounded card look */
+      .container { max-width: 1100px; }
+    </style>
+  </head>
+  <body class="min-h-screen bg-[#E6D7F5] text-[#3E3A41]">
+
+    <!-- Hero -->
+    <section class="relative overflow-hidden">
+      <nav class="container mx-auto px-6 py-6 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-10 h-10 bg-[#7F5FCF] rounded-xl flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 22c.9 0 1.7-.4 2.3-1.1C15.9 20.2 16 19.1 16 18h-8c0 1.1.1 2.2.7 2.9.6.7 1.4 1.1 2.3 1.1z" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <span class="tracking-tight" style="font-size:24px;font-weight:600">AcornHUB</span>
+        </div>
+        <div class="hidden md:flex gap-8 text-[#3E3A41]">
+          <a href="#workflow" class="hover:text-[#7F5FCF] transition-colors">Workflow</a>
+          <a href="#features" class="hover:text-[#7F5FCF] transition-colors">Features</a>
+          <a href="#about" class="hover:text-[#7F5FCF] transition-colors">About</a>
+          <a href="#contact" class="hover:text-[#7F5FCF] transition-colors">Contact</a>
+        </div>
+      </nav>
+
+      <div class="container mx-auto px-6 py-20 md:py-32">
+        <div class="grid md:grid-cols-2 gap-12 items-center">
+          <div class="space-y-6">
+            <h1 class="leading-tight" style="font-size:52px;font-weight:700">AcornHUB — Smart & Simple Company Notifications</h1>
+            <p class="opacity-80" style="font-size:18px;line-height:1.7">Instant company news, reactions, scheduling, and engagement — all in one elegant desktop app.</p>
+            <div class="flex flex-wrap gap-4 pt-4">
+              <a href="{{ url_for('login') }}" class="px-8 py-3 bg-[#B6A3D8] text-white rounded-lg hover:bg-[#7F5FCF] transition-colors flex items-center gap-2 shadow-sm">Get Started
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 12h14M12 5l7 7-7 7" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </a>
+              <button class="px-8 py-3 bg-white text-[#3E3A41] rounded-lg hover:bg-[#F5F0FF] transition-colors shadow-sm border border-[rgba(0,0,0,0.08)]">View Features</button>
+            </div>
+          </div>
+
+          <!-- Mockup Preview -->
+          <div class="relative">
+            
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- App Overview -->
+    <section class="py-20 bg-white">
+      <div class="container mx-auto px-6">
+        <div class="grid md:grid-cols-2 gap-12 items-center">
+          <div class="order-2 md:order-1">
+            <img src="https://images.unsplash.com/photo-1600960568458-7966d439289e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080" alt="AcornHUB Interface" class="rounded-2xl shadow-2xl border border-[rgba(0,0,0,0.08)]" />
+          </div>
+          <div class="space-y-6 order-1 md:order-2">
+            <h2 class="leading-tight" style="font-size:42px;font-weight:700">Your Company Communication, Reimagined</h2>
+            <p class="opacity-80" style="font-size:18px;line-height:1.8">AcornHUB helps teams receive company updates instantly through a clean popup interface with reactions, feedback, and message scheduling.</p>
+            <div class="space-y-4 pt-4">
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#F5F0FF] rounded-lg flex items-center justify-center">✓</div>
+                <div>
+                  <h3 class="mb-1" style="font-size:16px;font-weight:600">Clean Popup Interface</h3>
+                  <p class="opacity-70" style="font-size:14px">Non-intrusive notifications that appear when needed</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#F5F0FF] rounded-lg flex items-center justify-center">✓</div>
+                <div>
+                  <h3 class="mb-1" style="font-size:16px;font-weight:600">Instant Reactions</h3>
+                  <p class="opacity-70" style="font-size:14px">Express your feelings with 4 emotion reactions</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <div class="w-8 h-8 bg-[#F5F0FF] rounded-lg flex items-center justify-center">✓</div>
+                <div>
+                  <h3 class="mb-1" style="font-size:16px;font-weight:600">Smart Scheduling</h3>
+                  <p class="opacity-70" style="font-size:14px">Set reminders or play messages immediately</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workflow -->
+    <section id="workflow" class="py-20 bg-[#E6D7F5]">
+      <div class="container mx-auto px-6">
+        <div class="text-center mb-16">
+          <h2 class="mb-4 leading-tight" style="font-size:42px;font-weight:700">How AcornHUB Works</h2>
+          <p class="opacity-80 max-w-2xl mx-auto" style="font-size:18px">A simple, elegant workflow from announcement to engagement</p>
+        </div>
+
+        <div class="max-w-5xl mx-auto space-y-6">
+          <!-- steps simplified -->
+          <div class="bg-white rounded-xl p-6 shadow-sm border border-[rgba(0,0,0,0.08)] hover:shadow-md transition-shadow">
+            <div class="flex items-start gap-6">
+              <div class="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0" style="background-color:#B6A3D8">📤</div>
+              <div class="flex-1">
+                <h3 class="mb-2" style="font-size:20px;font-weight:600">HR Sends News</h3>
+                <p class="opacity-70" style="font-size:16px">HR posts announcements through the AcornHUB admin portal.</p>
+              </div>
+              <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background-color:#F5F0FF"><span style="color:#7F5FCF;font-size:18px;font-weight:600">1</span></div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl p-6 shadow-sm border border-[rgba(0,0,0,0.08)] hover:shadow-md transition-shadow">
+            <div class="flex items-start gap-6">
+              <div class="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0" style="background-color:#7F5FCF">📱</div>
+              <div class="flex-1"><h3 class="mb-2" style="font-size:20px;font-weight:600">Employees Receive Popup</h3><p class="opacity-70" style="font-size:16px">Clean lavender popup appears with white message box on employee screens.</p></div>
+              <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background-color:#F5F0FF"><span style="color:#7F5FCF;font-size:18px;font-weight:600">2</span></div>
+            </div>
+          </div>
+
+          <div class="mt-16 bg-white rounded-2xl p-8 shadow-sm border border-[rgba(0,0,0,0.08)]">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+              <div class="space-y-3">
+                <div class="w-16 h-16 bg-[#F5F0FF] rounded-xl flex items-center justify-center mx-auto">👍</div>
+                <p style="font-size:14px">Like</p>
+              </div>
+              <div class="space-y-3">
+                <div class="w-16 h-16 bg-[#F5F0FF] rounded-xl flex items-center justify-center mx-auto">👎</div>
+                <p style="font-size:14px">Dislike</p>
+              </div>
+              <div class="space-y-3">
+                <div class="w-16 h-16 bg-[#F5F0FF] rounded-xl flex items-center justify-center mx-auto">❤️</div>
+                <p style="font-size:14px">Love</p>
+              </div>
+              <div class="space-y-3">
+                <div class="w-16 h-16 bg-[#F5F0FF] rounded-xl flex items-center justify-center mx-auto">😮</div>
+                <p style="font-size:14px">Surprised</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="py-20 bg-white">
+      <div class="container mx-auto px-6">
+        <div class="text-center mb-16">
+          <h2 class="mb-4 leading-tight" style="font-size:42px;font-weight:700">Key Features</h2>
+          <p class="opacity-80 max-w-2xl mx-auto" style="font-size:18px">Everything you need for modern company communication</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          <div class="bg-[#F5F0FF] rounded-xl p-6 hover:shadow-lg transition-all hover:-translate-y-1 border border-[rgba(0,0,0,0.08)]">
+            <div class="w-14 h-14 rounded-xl flex items-center justify-center mb-4 bg-gradient-to-br from-[#B6A3D8] to-[#7F5FCF]">🔔</div>
+            <h3 class="mb-2" style="font-size:20px;font-weight:600">Instant Notifications</h3>
+            <p class="opacity-70" style="font-size:14px">Real-time company announcements delivered directly to employee desktops with elegant popup interface.</p>
+          </div>
+
+          <div class="bg-[#F5F0FF] rounded-xl p-6 hover:shadow-lg transition-all hover:-translate-y-1 border border-[rgba(0,0,0,0.08)]">
+            <div class="w-14 h-14 rounded-xl flex items-center justify-center mb-4 bg-gradient-to-br from-[#7F5FCF] to-[#B6A3D8]">⏰</div>
+            <h3 class="mb-2" style="font-size:20px;font-weight:600">Smart Scheduling Alerts</h3>
+            <p class="opacity-70" style="font-size:14px">Set custom reminders for important messages. Choose to play now or schedule for later.</p>
+          </div>
+
+          <div class="bg-[#F5F0FF] rounded-xl p-6 hover:shadow-lg transition-all hover:-translate-y-1 border border-[rgba(0,0,0,0.08)]">
+            <div class="w-14 h-14 rounded-xl flex items-center justify-center mb-4 bg-gradient-to-br from-[#B6A3D8] to-[#7F5FCF]">❤️</div>
+            <h3 class="mb-2" style="font-size:20px;font-weight:600">4 Emotion Reactions</h3>
+            <p class="opacity-70" style="font-size:14px">Express feelings instantly with 👍 👎 ❤️ 😮 reactions. See real-time engagement from your team.</p>
+          </div>
+        </div>
+
+        <div class="mt-16 bg-gradient-to-br from-[#B6A3D8] to-[#7F5FCF] rounded-2xl p-8 md:p-12 text-center">
+          <h3 class="text-white mb-3 leading-tight" style="font-size:32px;font-weight:700">Built for Enterprise Teams</h3>
+          <p class="text-white opacity-90 max-w-2xl mx-auto mb-6" style="font-size:18px">AcornHUB is designed to scale with your organization, from small teams to enterprise-wide deployment.</p>
+          <button class="px-8 py-3 bg-white text-[#7F5FCF] rounded-lg hover:bg-[#F5F0FF] transition-colors shadow-lg">Request a Demo</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshots (simplified) -->
+    <section class="py-20 bg-[#E6D7F5]">
+      <div class="container mx-auto px-6">
+        <div class="text-center mb-16">
+          <h2 class="mb-4 leading-tight" style="font-size:42px;font-weight:700">Interface Preview</h2>
+          <p class="opacity-80 max-w-2xl mx-auto" style="font-size:18px">Experience the clean, intuitive design of AcornHUB</p>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6 max-w-6xl mx-auto">
+          <div class="bg-white rounded-xl p-6 shadow-lg border border-[rgba(0,0,0,0.08)]">
+            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-[rgba(0,0,0,0.08)]"><span>🔔</span><span style="font-size:14px;font-weight:600">Main Message Viewer</span></div>
+            <div class="bg-[#F5F0FF] rounded-lg p-5 space-y-4">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 bg-[#7F5FCF] rounded-full flex items-center justify-center text-white">IT</div>
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1"><span style="font-size:13px;font-weight:600">IT Department</span><span class="opacity-60" style="font-size:11px">5m ago</span></div>
+                  <p style="font-size:13px;line-height:1.6">System maintenance scheduled for tonight at 10 PM. Expected downtime: 2 hours.</p>
+                </div>
+              </div>
+              <div class="pt-2"><textarea placeholder="Write your feedback..." class="w-full px-3 py-2 bg-white rounded-lg border border-[rgba(0,0,0,0.08)] resize-none text-[#3E3A41]" style="font-size:12px" rows="2"></textarea></div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl p-6 shadow-lg border border-[rgba(0,0,0,0.08)]">
+            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-[rgba(0,0,0,0.08)]"><span>❤️</span><span style="font-size:14px;font-weight:600">Reaction Row</span></div>
+            <div class="space-y-4">
+              <div class="flex gap-2">
+                <button class="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#F5F0FF] rounded-lg border-2 border-[#B6A3D8] hover:bg-[#B6A3D8] hover:text-white transition-colors">👍 <span style="font-size:14px;font-weight:600">24</span></button>
+                <button class="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#F5F0FF] rounded-lg border border-[rgba(0,0,0,0.08)] hover:border-[#B6A3D8] transition-colors">❤️ <span style="font-size:14px;font-weight:600">18</span></button>
+              </div>
+              <div class="flex gap-2">
+                <button class="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#F5F0FF] rounded-lg border border-[rgba(0,0,0,0.08)] hover:border-[#B6A3D8] transition-colors">😮 <span style="font-size:14px;font-weight:600">5</span></button>
+                <button class="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#F5F0FF] rounded-lg border border-[rgba(0,0,0,0.08)] hover:border-[#B6A3D8] transition-colors">👎 <span style="font-size:14px;font-weight:600">2</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About & Footer -->
+    <section id="about" class="py-20 bg-white">
+      <div class="container mx-auto px-6">
+        <div class="max-w-4xl mx-auto">
+          <div class="bg-gradient-to-br from-[#F5F0FF] to-[#E6D7F5] rounded-2xl p-8 md:p-12 border border-[rgba(0,0,0,0.08)]">
+            <div class="flex items-center gap-3 mb-6">
+              <div class="w-12 h-12 bg-[#7F5FCF] rounded-xl flex items-center justify-center">🏢</div>
+              <h2 class="leading-tight" style="font-size:32px;font-weight:700">About AcornHUB</h2>
+            </div>
+            <p class="opacity-90 mb-8" style="font-size:18px;line-height:1.8">AcornHUB is developed by <span style="font-weight:600">Acorn Group IT</span> to modernize internal communication through simplicity, clarity, and interaction. We believe that company announcements should be engaging, not overwhelming.</p>
+            <div class="grid md:grid-cols-3 gap-6">
+              <div class="bg-white rounded-xl p-6 shadow-sm">
+                <div class="w-10 h-10 bg-[#B6A3D8] rounded-lg flex items-center justify-center mb-4">👥</div>
+                <h3 class="mb-2" style="font-size:18px;font-weight:600">User-Centered</h3>
+                <p class="opacity-70" style="font-size:14px">Designed with employee experience at the forefront</p>
+              </div>
+              <div class="bg-white rounded-xl p-6 shadow-sm">
+                <div class="w-10 h-10 bg-[#7F5FCF] rounded-lg flex items-center justify-center mb-4">✨</div>
+                <h3 class="mb-2" style="font-size:18px;font-weight:600">Modern Design</h3>
+                <p class="opacity-70" style="font-size:14px">Beautiful interface that employees actually enjoy using</p>
+              </div>
+              <div class="bg-white rounded-xl p-6 shadow-sm">
+                <div class="w-10 h-10 bg-[#B6A3D8] rounded-lg flex items-center justify-center mb-4">🏢</div>
+                <h3 class="mb-2" style="font-size:18px;font-weight:600">Enterprise Ready</h3>
+                <p class="opacity-70" style="font-size:14px">Built to scale with organizations of all sizes</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-12 text-center">
+            <p class="opacity-80 max-w-2xl mx-auto" style="font-size:16px;line-height:1.8">Our mission is to create communication tools that bring teams closer together, making every announcement an opportunity for engagement and connection.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bg-[#F5F0FF] border-t border-[rgba(0,0,0,0.08)]">
+      <div class="container mx-auto px-6 py-12">
+        <div class="grid md:grid-cols-4 gap-8 mb-8">
+          <div class="space-y-4">
+            <div class="flex items-center gap-2"><div class="w-10 h-10 bg-[#7F5FCF] rounded-xl flex items-center justify-center">🔔</div><span style="font-size:22px;font-weight:600">AcornHUB</span></div>
+            <p class="opacity-70" style="font-size:14px;line-height:1.6">Smart & Simple Company Notifications for Modern Teams</p>
+          </div>
+
+          <div>
+            <h3 class="mb-4" style="font-size:16px;font-weight:600">Navigation</h3>
+            <ul class="space-y-2">
+              <li><a href="#" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Home</a></li>
+              <li><a href="#workflow" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Workflow</a></li>
+              <li><a href="#features" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Features</a></li>
+              <li><a href="#about" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">About</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="mb-4" style="font-size:16px;font-weight:600">Resources</h3>
+            <ul class="space-y-2">
+              <li><a href="#" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Documentation</a></li>
+              <li><a href="#" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Support</a></li>
+              <li><a href="#" class="opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors" style="font-size:14px">Privacy Policy</a></li>
+            </ul>
+          </div>
+
+          <div id="contact">
+            <h3 class="mb-4" style="font-size:16px;font-weight:600">Contact Us</h3>
+            <div class="space-y-3">
+              <a href="mailto:info@acornhub.com" class="flex items-center gap-2 opacity-70 hover:opacity-100 hover:text-[#7F5FCF] transition-colors"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M3 8l9 6 9-6" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:14px">info@acornhub.com</span></a>
+              <div class="flex gap-3 pt-2">
+                <a href="#" class="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-[#7F5FCF] hover:bg-[#7F5FCF] hover:text-white transition-colors border border-[rgba(0,0,0,0.08)]">T</a>
+                <a href="#" class="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-[#7F5FCF] hover:bg-[#7F5FCF] hover:text-white transition-colors border border-[rgba(0,0,0,0.08)]">in</a>
+                <a href="#" class="w-9 h-9 bg-white rounded-lg flex items-center justify-center text-[#7F5FCF] hover:bg-[#7F5FCF] hover:text-white transition-colors border border-[rgba(0,0,0,0.08)]">G</a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-8 border-t border-[rgba(0,0,0,0.08)] flex flex-col md:flex-row justify-between items-center gap-4">
+          <p class="opacity-70" style="font-size:14px">© <span id="year">2025</span> Developed by <span style="font-weight:600">Acorn Group IT</span>. All rights reserved.</p>
+          <p class="opacity-70" style="font-size:14px">Made with ❤️ for better team communication</p>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // small JS: update year
+      document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>
+

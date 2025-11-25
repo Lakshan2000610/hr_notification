@@ -29,67 +29,56 @@
     </div>
 </div>
 
-<div class="dashboard-layout">
-    <div class="department-section">
-        <h2>Online Users by Department</h2>
-        <canvas id="departmentPieChart"></canvas>
-        <ul class="department-list">
-            {% for dept, count, percent in department_data %}
-            <li>{{ dept }}: {{ count }} ({{ percent }}%)</li>
+<div class="content-section">
+    <h2>Content Reactions and Feedback</h2>
+    {% if content_stats %}
+    <table class="content-table">
+        <thead>
+            <tr>
+                <th>Message</th>
+                <th>Likes</th>
+                <th>Unlikes</th>
+                <th>Hearts</th>
+                <th>Cries</th>
+                <th>Feedback</th>
+                <th>View Count</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for stat in paginated_stats %}
+            <tr>
+                <td>{{ stat.title }}</td>
+                <td>{{ stat.like_count }}</td>
+                <td>{{ stat.unlike_count }}</td>
+                <td>{{ stat.heart_count }}</td>
+                <td>{{ stat.cry_count }}</td>
+                <td>{{ stat.feedback_count }}</td>
+                <td>{{ stat.view_count }}</td>
+                <td><a href="{{ url_for('view_reactions', content_id=stat.id) }}" class="view-btn">View</a></td>
+            </tr>
             {% endfor %}
-        </ul>
-    </div>
-    <div class="content-section">
-        <h2>Content Reactions and Feedback</h2>
-        {% if content_stats %}
-        <table class="content-table">
-            <thead>
-                <tr>
-                    <th>Message</th>
-                    <th>Likes</th>
-                    <th>Unlikes</th>
-                    <th>Hearts</th>
-                    <th>Cries</th>
-                    <th>Feedback</th>
-                    <th>View Count</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for stat in paginated_stats %}
-                <tr>
-                    <td>{{ stat.title }}</td>
-                    <td>{{ stat.like_count }}</td>
-                    <td>{{ stat.unlike_count }}</td>
-                    <td>{{ stat.heart_count }}</td>
-                    <td>{{ stat.cry_count }}</td>
-                    <td>{{ stat.feedback_count }}</td>
-                    <td>{{ stat.view_count }}</td>
-                    <td><a href="{{ url_for('view_reactions', content_id=stat.id) }}" class="view-btn">View</a></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        </tbody>
+    </table>
 
-        <!-- Pagination Controls -->
-        <div class="pagination">
-            {% if current_page > 1 %}
-            <a href="?page={{ current_page - 1 }}" class="page-link">Previous</a>
-            {% endif %}
+    <!-- Pagination Controls -->
+    <div class="pagination">
+        {% if current_page > 1 %}
+        <a href="?page={{ current_page - 1 }}" class="page-link">Previous</a>
+        {% endif %}
 
-            {% for page_num in range(1, total_pages + 1) %}
-            <a href="?page={{ page_num }}" class="page-link {% if page_num == current_page %}active{% endif %}">{{ page_num }}</a>
-            {% endfor %}
+        {% for page_num in range(1, total_pages + 1) %}
+        <a href="?page={{ page_num }}" class="page-link {% if page_num == current_page %}active{% endif %}">{{ page_num }}</a>
+        {% endfor %}
 
-            {% if current_page < total_pages %}
-            <a href="?page={{ current_page + 1 }}" class="page-link">Next</a>
-            {% endif %}
-        </div>
-
-        {% else %}
-        <p>No content available. Send a message to populate this table.</p>
+        {% if current_page < total_pages %}
+        <a href="?page={{ current_page + 1 }}" class="page-link">Next</a>
         {% endif %}
     </div>
+
+    {% else %}
+    <p>No content available. Send a message to populate this table.</p>
+    {% endif %}
 </div>
 
 <style>
@@ -177,33 +166,12 @@
         max-width: 400px;
         margin: 20px auto;
     }
-    .dashboard-layout {
-        display: flex;
-        margin-top: 20px;
-    }
-    .department-section {
-        flex: 1;
-        max-width: 30%;
-        padding-right: 20px;
-    }
-    .department-list {
-        list-style: none;
-        padding: 0;
-    }
-    .department-list li {
-        margin: 10px 0;
-        font-size: 1.1em;
-    }
     .content-section {
         flex: 3;
     }
     #timeFilter {
         padding: 5px;
         margin-bottom: 10px;
-    }
-    #departmentPieChart {
-        max-width: 300px;
-        margin: 0 auto 20px;
     }
 </style>
 
@@ -264,46 +232,6 @@
         }
 
         fetchSentMessages();
-
-        // Department Pie Chart
-        const ctxPie = document.getElementById('departmentPieChart').getContext('2d');
-        const departmentData = '{{ department_data | tojson | safe }}';
-        const pieLabels = departmentData.map(d => d[0].toUpperCase());
-        const pieValues = departmentData.map(d => d[1]);
-        const totalConnected = pieValues.reduce((a, b) => a + b, 0);
-        const pieColors = [
-            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
-            '#FF9F40', '#FFCD56', '#36A2EB', '#4BC0C0', '#9966FF'
-        ]; // Expand as needed
-
-        new Chart(ctxPie, {
-            type: 'pie',
-            data: {
-                labels: pieLabels,
-                datasets: [{
-                    data: pieValues,
-                    backgroundColor: pieColors.slice(0, pieLabels.length),
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.parsed;
-                                const percentage = totalConnected > 0 ? Math.round((value / totalConnected) * 100) : 0;
-                                return `${label}: ${value} (${percentage}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
 
         const pageLinks = document.querySelectorAll('.page-link');
         pageLinks.forEach(link => {

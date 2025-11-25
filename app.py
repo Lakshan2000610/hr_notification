@@ -40,7 +40,7 @@ CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID")
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
-UPLOAD_DIR = "/var/www/hr_notification/uploads"
+UPLOAD_DIR = "/home/laka/Documents/hr_notification/uploads"
 VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
@@ -214,7 +214,7 @@ def login():
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    return redirect(url_for('login'))
+    return redirect(url_for('welcome'))
 
 
 @app.route('/get_sent_messages')
@@ -258,8 +258,16 @@ def get_sent_messages():
     except Exception as e:
         logging.error(f"Unexpected error fetching sent messages: {str(e)}")
         return jsonify({'labels': [], 'counts': []}), 500
-    
+
 @app.route('/')
+def welcome():
+    """Redirect to welcome page if not logged in"""
+    if 'logged_in' in session:
+        return redirect(url_for('home'))
+    return render_template('welcome.html')
+
+
+@app.route('/home')
 @login_required
 def home():
     try:
