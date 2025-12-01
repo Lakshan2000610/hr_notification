@@ -1,161 +1,126 @@
 -- =============================================
--- AcornHUB MySQL Database Schema
--- Migrated from Supabase (PostgreSQL)
+-- HR NOTIFICATION SYSTEM - FULL MYSQL SCHEMA
+-- Run this once to create all tables
 -- =============================================
 
--- Disable foreign key checks temporarily
-SET FOREIGN_KEY_CHECKS = 0;
+CREATE DATABASE IF NOT EXISTS hr_notification CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE hr_notification;
 
--- Drop tables in correct order
-DROP TABLE IF EXISTS views;
-DROP TABLE IF EXISTS reactions;
-DROP TABLE IF EXISTS message_preferences;
-DROP TABLE IF EXISTS feedback;
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS scheduled_content;
-DROP TABLE IF EXISTS device_update_status;
-DROP TABLE IF EXISTS employee_devices;
-DROP TABLE IF EXISTS employees;
-
--- Enable foreign key checks
-SET FOREIGN_KEY_CHECKS = 1;
-
--- =============================================
--- 1. employees
--- =============================================
-CREATE TABLE employees (
-    id VARCHAR(36) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_email (email)
+-- 1. Employees
+CREATE TABLE IF NOT EXISTS employees (
+    id VARCHAR(36) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =============================================
--- 2. employee_devices
--- =============================================
-CREATE TABLE employee_devices (
-    employee_id VARCHAR(36) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    active_status TINYINT(1) NOT NULL DEFAULT 0,
+-- 2. Employee Devices (one-to-one with employee)
+CREATE TABLE IF NOT EXISTS employee_devices (
+    employee_id VARCHAR(36) PRIMARY KEY,
+    status ENUM('online','offline') DEFAULT 'offline',
+    active_status TINYINT(1) DEFAULT 0,
+    hostname VARCHAR(255) DEFAULT 'unknown-host',
+    email VARCHAR(255) NOT NULL,
+    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    app_running TINYINT(1) DEFAULT 0,
     ip VARCHAR(45),
-    device_type VARCHAR(100),
-    hostname VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    last_seen DATETIME NOT NULL,
-    app_running TINYINT(1) NOT NULL,
-    PRIMARY KEY (employee_id),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+    device_type VARCHAR(50),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    INDEX idx_active (active_status),
+    INDEX idx_last_seen (last_seen)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =============================================
--- 3. scheduled_content
--- =============================================
-CREATE TABLE scheduled_content (
-    id VARCHAR(36) NOT NULL,
-    type ENUM('text', 'image', 'video', 'both') NOT NULL,
-    title VARCHAR(255),
-    `text` TEXT,
-    image_url VARCHAR(500),
+-- 3. Scheduled Content
+CREATE TABLE IF NOT EXISTS scheduled_content (
+    id VARCHAR(36) PRIMARY KEY,
+    type VARCHAR(20) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    text TEXT,
+    image_url TEXT,
+    url TEXT,
     scheduled_time DATETIME NOT NULL,
-    employees JSON NOT NULL,  -- Array of employee IDs: ["emp1", "emp2"]
-    url VARCHAR(500),
-    PRIMARY KEY (id)
+    employees JSON NOT NULL, -- Stores array like ["emp1", "emp2"]
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_time (scheduled_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =============================================
--- 4. notifications
--- =============================================
-CREATE TABLE notifications (
-    id INT AUTO_INCREMENT,
-    content_id VARCHAR(36),
+-- 4. Notifications (sent 5 mins before content)
+CREATE TABLE IF NOT EXISTS notifications (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    content_id VARCHAR(36) NOT NULL,
     employees JSON NOT NULL,
-    `time` DATETIME NOT NULL,
-    PRIMARY KEY (id),
-    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
+    time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    INDEX idx_content (content_id),
+    INDEX idx_time (time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =============================================
--- 5. feedback
--- =============================================
-CREATE TABLE feedback (
-    id INT AUTO_INCREMENT,
-    content_id VARCHAR(36),
-    employee_id VARCHAR(36),
+-- 5. Reactions (one reaction per employee per content)
+CREATE TABLE IF NOT EXISTS reactions (
+    id VARCHAR(36) PRIMARY KEY,
+    content_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    reaction ENUM('like','unlike','heart','cry') NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_reaction (content_id, employee_id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    INDEX idx_content (content_id),
+    INDEX idx_employee (employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 6. Feedback
+CREATE TABLE IF NOT EXISTS feedback (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    content_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
     feedback TEXT NOT NULL,
-    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
-    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- =============================================
--- 6. message_preferences
--- =============================================
-CREATE TABLE message_preferences (
-    id CHAR(36) NOT NULL DEFAULT (UUID()),
-    employee_id VARCHAR(36) NOT NULL,
-    content_id VARCHAR(36) NOT NULL,
-    delay_choice VARCHAR(50),
-    display_time DATETIME,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_preference (employee_id, content_id),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
-    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- =============================================
--- 7. reactions
--- =============================================
-CREATE TABLE reactions (
-    id CHAR(36) NOT NULL DEFAULT (UUID()),
-    content_id VARCHAR(36) NOT NULL,
-    employee_id VARCHAR(36) NOT NULL,
-    reaction ENUM('like', 'unlike', 'heart', 'cry') NOT NULL,
-    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- =============================================
--- 8. views
--- =============================================
-CREATE TABLE views (
-    id CHAR(36) NOT NULL DEFAULT (UUID()),
-    content_id VARCHAR(36) NOT NULL,
-    employee_id VARCHAR(36) NOT NULL,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    viewed_duration FLOAT NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_view (content_id, employee_id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    INDEX idx_content (content_id),
+    INDEX idx_employee (employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 7. Views (track how long content was viewed)
+CREATE TABLE IF NOT EXISTS views (
+    id VARCHAR(36) PRIMARY KEY,
+    content_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    viewed_duration INT DEFAULT 0,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_view (content_id, employee_id),
+    FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    INDEX idx_content (content_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 8. Message Preferences (delay choice per employee per content)
+CREATE TABLE IF NOT EXISTS message_preferences (
+    employee_id VARCHAR(36) NOT NULL,
+    content_id VARCHAR(36) NOT NULL,
+    delay_choice VARCHAR(50) NOT NULL,
+    display_time DATETIME NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (employee_id, content_id),
     FOREIGN KEY (content_id) REFERENCES scheduled_content(id) ON DELETE CASCADE,
     FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =============================================
--- 9. device_update_status
--- =============================================
-CREATE TABLE device_update_status (
-    id VARCHAR(36) NOT NULL,
+-- 9. Device Update Status (for app.exe updates)
+CREATE TABLE IF NOT EXISTS device_update_status (
+    id VARCHAR(36) PRIMARY KEY,
     employee_id VARCHAR(36) NOT NULL,
     device_id VARCHAR(36) NOT NULL,
-    version VARCHAR(20) NOT NULL,
-    status ENUM('success', 'pending', 'failed') NOT NULL,
-    last_attempted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version VARCHAR(50),
+    status ENUM('success','pending','failed') DEFAULT 'pending',
     error_message TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
-    FOREIGN KEY (device_id) REFERENCES employee_devices(employee_id) ON DELETE CASCADE
+    last_attempted_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_device (employee_id, device_id),
+    INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- =============================================
--- Indexes for Performance
+-- DONE! All tables created.
+-- Now your Flask app with MySQL will work perfectly.
 -- =============================================
-CREATE INDEX idx_employees_email ON employees(email);
-CREATE INDEX idx_scheduled_time ON scheduled_content(scheduled_time);
-CREATE INDEX idx_notifications_time ON notifications(`time`);
-CREATE INDEX idx_views_employee ON views(employee_id);
-CREATE INDEX idx_views_content ON views(content_id);
-CREATE INDEX idx_reactions_content ON reactions(content_id);
-CREATE INDEX idx_feedback_content ON feedback(content_id);

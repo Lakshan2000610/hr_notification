@@ -21,14 +21,18 @@ from dateutil import parser
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
+
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'super_secret_key')  # Load from .env or fallback
+
 
 # Load environment variables from .env file
 load_dotenv()
 
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -40,10 +44,11 @@ CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID")
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
-UPLOAD_DIR = "/var/www/hr_notification/uploads"
+UPLOAD_DIR = "/home/laka/Documents/hr_notification/uploads"
 VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
+
 
 # Ensure upload directories exist
 for directory in [UPLOAD_DIR, VIDEO_DIR, IMAGE_DIR]:
@@ -51,7 +56,6 @@ for directory in [UPLOAD_DIR, VIDEO_DIR, IMAGE_DIR]:
         os.makedirs(directory)
         logging.info(f"Created directory: {directory}")
 
-
 # Validate Supabase URL
 def validate_supabase_url(url):
     try:
@@ -59,12 +63,12 @@ def validate_supabase_url(url):
         return all([result.scheme == "https", result.netloc.endswith(".supabase.co")])
     except ValueError:
         return False
+
 
 # Ensure upload directory exists
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-
 # Validate Supabase URL
 def validate_supabase_url(url):
     try:
@@ -72,6 +76,7 @@ def validate_supabase_url(url):
         return all([result.scheme == "https", result.netloc.endswith(".supabase.co")])
     except ValueError:
         return False
+
 
 # Initialize Supabase client with retry logic
 def init_supabase_client():
@@ -99,7 +104,9 @@ def init_supabase_client():
                 exit(1)
             time.sleep(2)
 
+
 supabase: Client = init_supabase_client()
+
 
 # Verify file exists in local directory
 def verify_file(directory, filename):
@@ -143,10 +150,12 @@ def ensure_bucket(bucket_name):
         else:
             logging.info(f"Bucket {bucket_name} already exists")
 
+
         logging.warning(f"RLS policy for {bucket_name} bucket must be set manually in Supabase Dashboard or SQL Editor.")
     except Exception as e:
         logging.error(f"Error ensuring bucket {bucket_name}: {str(e)}")
         raise Exception(f"Failed to ensure bucket {bucket_name}: {str(e)}")
+
 
 # Schedule a notification 5 minutes before content delivery
 def schedule_notification(content_id, scheduled_time, employees):
@@ -157,6 +166,7 @@ def schedule_notification(content_id, scheduled_time, employees):
             threading.Timer(time_to_wait, send_notification, args=(content_id, employees)).start()
     except Exception as e:
         logging.error(f"Error scheduling notification for content_id {content_id}: {str(e)}")
+
 
 def send_notification(content_id, employees):
     try:
@@ -169,6 +179,7 @@ def send_notification(content_id, employees):
     except Exception as e:
         logging.error(f"Error sending notification: {str(e)}")
 
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -177,6 +188,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
 def get_current_version():
     version_path = os.path.join(app.config['UPLOAD_FOLDER'], 'version.txt')
     try:
@@ -184,6 +196,7 @@ def get_current_version():
             return f.read().strip()
     except Exception:
         return None
+
 
 # Serve files from uploads directory
 @app.route('/uploads/<path:filename>')
@@ -211,10 +224,13 @@ def login():
             return render_template('login.html', error="Invalid username or password")
     return render_template('login.html')
 
+
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    return redirect(url_for('login'))
+    return redirect(url_for('welcome'))
+
+
 
 
 @app.route('/get_sent_messages')
@@ -224,6 +240,7 @@ def get_sent_messages():
         filter_type = request.args.get('filter', 'day')
         current_time = datetime.now(timezone.utc)
 
+
         if filter_type == 'day':
             time_threshold = current_time - timedelta(days=1)
         elif filter_type == 'month':
@@ -231,11 +248,13 @@ def get_sent_messages():
         else:
             time_threshold = current_time - timedelta(days=1)  # Default to day
 
+
         notifications_response = supabase.table('notifications') \
             .select('time') \
             .gt('time', time_threshold.isoformat()) \
             .execute()
         notifications = notifications_response.data or []
+
 
         # Group by day or month
         counts = {}
@@ -247,8 +266,10 @@ def get_sent_messages():
                 label = notif_time.strftime('%Y-%m-%d')
             counts[label] = counts.get(label, 0) + 1
 
+
         labels = list(counts.keys())
         data = list(counts.values())
+
 
         logging.info(f"Sent messages data for {filter_type}: labels={labels}, counts={data}")
         return jsonify({'labels': labels, 'counts': data})
@@ -258,17 +279,30 @@ def get_sent_messages():
     except Exception as e:
         logging.error(f"Unexpected error fetching sent messages: {str(e)}")
         return jsonify({'labels': [], 'counts': []}), 500
-    
+
+
 @app.route('/')
+def welcome():
+    """Redirect to welcome page if not logged in"""
+    if 'logged_in' in session:
+        return redirect(url_for('home'))
+    return render_template('welcome.html')
+
+
+
+
+@app.route('/home')
 @login_required
 def home():
     try:
         supabase_version = pkg_resources.get_distribution("supabase").version
         logging.debug(f"Supabase Python client version: {supabase_version}")
 
+
         employees_response = supabase.table('employees').select('id').execute()
         employee_count = len(employees_response.data or [])
         logging.debug(f"Employees query result: count={employee_count}, data={employees_response.data}")
+
 
         # Fetch devices with active_status True
         devices_response = supabase.table('employee_devices') \
@@ -276,6 +310,7 @@ def home():
             .eq('active_status', True) \
             .execute()
         devices = devices_response.data or []
+
 
         headers = {
             "x-xdr-auth-id": CORTEX_API_KEY_ID,
@@ -295,6 +330,7 @@ def home():
         cortex_data = cortex_response.json()
         cortex_endpoints = cortex_data.get('reply', {}).get('endpoints', [])
 
+
         cortex_map = {endpoint.get('endpoint_name', '').lower(): endpoint.get('endpoint_status') for endpoint in cortex_endpoints}
         department_counts = {}
         for device in devices:
@@ -309,15 +345,19 @@ def home():
             if is_connected:
                 department_counts[department] = department_counts.get(department, 0) + 1
 
+
         total_connected = sum(department_counts.values())
         department_data = []
         for dept, count in department_counts.items():
             percent = round((count / total_connected) * 100) if total_connected > 0 else 0
             department_data.append((dept, count, percent))
 
+
         department_data.sort(key=lambda x: x[1], reverse=True)  # Sort by count descending
 
+
         active_devices = total_connected
+
 
         contents_response = supabase.table('scheduled_content').select('*').execute()
         contents = contents_response.data or []
@@ -344,6 +384,7 @@ def home():
                 'view_count': view_count
             })
 
+
         # Pagination logic
         items_per_page = 10
         page = int(request.args.get('page', 1))
@@ -352,6 +393,7 @@ def home():
         start_idx = (page - 1) * items_per_page
         end_idx = start_idx + items_per_page
         paginated_stats = content_stats[start_idx:end_idx]
+
 
         logging.info(f"Home data: Employees={employee_count}, Active Devices={active_devices}, Department Data={department_data}, Content Stats={content_stats}, Page={page}, Total Pages={total_pages}")
         return render_template('home.html', 
@@ -414,6 +456,7 @@ def get_paginated_stats():
                 'view_count': view_count
             })
 
+
         # Pagination logic
         items_per_page = 10
         page = int(request.args.get('page', 1))
@@ -422,6 +465,7 @@ def get_paginated_stats():
         start_idx = (page - 1) * items_per_page
         end_idx = start_idx + items_per_page
         paginated_stats = content_stats[start_idx:end_idx]
+
 
         return jsonify({
             'paginated_stats': paginated_stats,
@@ -437,6 +481,7 @@ def get_paginated_stats():
             'error': str(e)
         }), 500
 
+
 @app.route('/employees')
 @login_required
 def get_employees():
@@ -449,6 +494,8 @@ def get_employees():
         return jsonify({"message": f"Error fetching employees: {str(e)}"}), 500
 
 
+
+
 # Updated /updates/version
 @app.route('/updates/version', methods=['GET'])
 def get_version():
@@ -459,11 +506,13 @@ def get_version():
             logger.error(f"Version file not found: {version_path}")
             return jsonify({"message": "Version file not found", "version": "unknown"}), 404
 
+
         with open(version_path, 'r') as f:
             version_text = f.read().strip()
             if not version_text:
                 logger.error("Version file is empty")
                 return jsonify({"message": "Version file is empty", "version": "unknown"}), 404
+
 
         logger.info(f"Served version: {version_text}")
         return version_text, 200, {'Content-Type': 'text/plain'}
@@ -481,17 +530,20 @@ def get_app():
             logger.error(f"App executable not found: {exe_path}")
             return jsonify({'error': 'App executable not found'}), 404
 
+
         # Optional: Add file size check (e.g., ensure not empty)
         file_size = os.path.getsize(exe_path)
         if file_size < 1024:  # Example: Minimum size check
             logger.error(f"App executable too small: {file_size} bytes")
             return jsonify({'error': 'Invalid app executable'}), 400
 
+
         logger.info(f"Serving app.exe: {exe_path}, size: {file_size} bytes")
         return send_file(exe_path, as_attachment=True, download_name='app.exe')
     except Exception as e:
         logger.error(f"Error serving app executable: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/update_status', methods=['POST'])
 def update_status():
@@ -514,6 +566,7 @@ def update_status():
                 logging.error(f"Failed to log invalid data to device_update_status: {str(insert_e)}")
             return jsonify({'error': 'Invalid or missing JSON data'}), 400
 
+
         employee_id = data.get('employee_id')
         if not employee_id:
             logging.error("Missing employee_id in update_status request")
@@ -531,6 +584,7 @@ def update_status():
                 logging.error(f"Failed to log missing employee_id to device_update_status: {str(insert_e)}")
             return jsonify({'error': 'Missing employee_id'}), 400
 
+
         status = data.get('status', 'offline')
         app_running = data.get('app_running', False)
         ip = data.get('ip')
@@ -541,6 +595,7 @@ def update_status():
         device_id = data.get('device_id', employee_id)  # Fallback to employee_id if missing
         update_status_val = data.get('update_status', 'pending')  # Renamed to avoid keyword conflict
         error_message = data.get('error_message')
+
 
         # Validate inputs
         if status not in ['online', 'offline']:
@@ -556,11 +611,13 @@ def update_status():
             logging.error(f"Invalid update_status: {update_status_val}")
             return jsonify({'error': 'Invalid update_status'}), 400
 
+
         # Validate employee exists
         employee = supabase.table('employees').select('id').eq('id', employee_id).execute().data
         if not employee:
             logging.error(f"Employee ID {employee_id} not found")
             return jsonify({'error': f"Employee ID {employee_id} not found"}), 400
+
 
         # Get current version from server
         try:
@@ -571,6 +628,7 @@ def update_status():
         except Exception as e:
             logging.error(f"Error reading server version: {str(e)}", exc_info=True)
             server_version = 'unknown'
+
 
         update_data = {
             'employee_id': employee_id,
@@ -596,6 +654,7 @@ def update_status():
         }
         update_status_data = {k: v for k, v in update_status_data.items() if v is not None}
 
+
         # Perform upserts, but catch individual failures
         try:
             logging.debug(f"Upserting to employee_devices: {update_data}")
@@ -603,6 +662,7 @@ def update_status():
         except APIError as e:
             logging.error(f"Failed to upsert employee_devices: {str(e)}")
             # Continue anyway, since this is non-critical
+
 
         if current_version != 'unknown':
             try:
@@ -612,8 +672,10 @@ def update_status():
                 logging.error(f"Failed to upsert device_update_status: {str(e)}")
                 # Continue anyway
 
+
         logging.info(f"Updated device status for employee {employee_id}, version {current_version}, device_id {device_id}")
         return jsonify({'message': 'Status updated successfully', 'version_status': current_version}), 200
+
 
     except APIError as e:
         logging.error(f"Supabase API error updating device status: {str(e)}", exc_info=True)
@@ -630,19 +692,24 @@ def upload_version():
     if request.method == 'GET':
         return render_template('upload_version.html', current_version=current_version)
 
+
     if 'version_file' not in request.files or 'exe_file' not in request.files:
         logger.error("Missing version_file or exe_file")
         return render_template('upload_version.html', error="Both version.txt and app.exe are required.", current_version=current_version)
 
+
     version_file = request.files['version_file']
     exe_file = request.files['exe_file']
+
 
     if not version_file.filename.endswith('.txt') or not exe_file.filename.endswith('.exe'):
         logger.error("Invalid file types uploaded")
         return render_template('upload_version.html', error="Invalid file types. Upload version.txt and app.exe.", current_version=current_version)
 
+
     version_path = os.path.join(app.config['UPLOAD_FOLDER'], 'version.txt')
     exe_path = os.path.join(app.config['UPLOAD_FOLDER'], 'app.exe')
+
 
     try:
         # Save files to temporary location first
@@ -651,6 +718,7 @@ def upload_version():
         temp_exe_path = os.path.join(temp_dir, f"app_{uuid.uuid4()}.exe")
         version_file.save(temp_version_path)
         exe_file.save(temp_exe_path)
+
 
         # Validate version format
         with open(temp_version_path, 'r') as f:
@@ -661,14 +729,17 @@ def upload_version():
                 os.remove(temp_exe_path)
                 return render_template('upload_version.html', error="Invalid version format.", current_version=current_version)
 
+
         # Move files to final location
         shutil.move(temp_version_path, version_path)
         shutil.move(temp_exe_path, exe_path)
+
 
         # Verify files were saved
         if not os.path.exists(version_path) or not os.path.exists(exe_path):
             logger.error("Failed to save version file or app executable")
             return render_template('upload_version.html', error="Failed to save files.", current_version=current_version)
+
 
         # Clear old pending/failed statuses
         supabase.table('device_update_status').delete().neq('status', 'success').execute()
@@ -682,6 +753,7 @@ def upload_version():
         for temp_file in [temp_version_path, temp_exe_path]:
             if 'temp_version_path' in locals() and os.path.exists(temp_file):
                 os.remove(temp_file)
+
 
 @app.route('/update_status/summary', methods=['GET'])
 @login_required
@@ -700,6 +772,7 @@ def update_status_summary():
         logger.error(f"Error fetching update status summary: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/update_status/all', methods=['GET'])
 @login_required
 def update_status_all():
@@ -709,6 +782,7 @@ def update_status_all():
     except Exception as e:
         logger.error(f"Error fetching all update statuses: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/update_status/success', methods=['GET'])
 @login_required
@@ -720,6 +794,7 @@ def update_status_success():
         logger.error(f"Error fetching successful updates: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/update_status/pending', methods=['GET'])
 @login_required
 def update_status_pending():
@@ -730,6 +805,7 @@ def update_status_pending():
         logger.error(f"Error fetching pending updates: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/update_status/failed', methods=['GET'])
 @login_required
 def update_status_failed():
@@ -739,6 +815,7 @@ def update_status_failed():
     except Exception as e:
         logger.error(f"Error fetching failed updates: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/check_upload_readiness', methods=['GET'])
 @login_required
@@ -762,6 +839,7 @@ def view_reactions(content_id):
         content = content_response.data[0] if content_response.data else {'title': 'No title', 'text': 'No content found', 'image_url': None, 'url': None}
         logging.debug(f"Content for content_id {content_id}: {content}")
 
+
         reactions_response = supabase.table('reactions').select('*').eq('content_id', content_id).execute()
         reactions = reactions_response.data or []
         logging.debug(f"Reactions for content {content_id}: {reactions}")
@@ -776,6 +854,7 @@ def view_reactions(content_id):
         logging.debug(f"Employees fetched for mapping: {employees}")
         employee_map = {emp['id']: emp['email'] for emp in employees}
 
+
         reaction_details = [
             {'employee_email': employee_map.get(r['employee_id'], r['employee_id']), 'reaction': r['reaction'], 'timestamp': r['timestamp']}
             for r in reactions
@@ -784,6 +863,7 @@ def view_reactions(content_id):
             {'employee_email': employee_map.get(f['employee_id'], f['employee_id']), 'feedback': f['feedback'], 'timestamp': f['timestamp']}
             for f in feedback
         ]
+
 
         logging.info(f"Reaction details for content {content_id}: {reaction_details}, Feedback details: {feedback_details}")
         return render_template('view_react.html', 
@@ -817,6 +897,7 @@ def view_reactions(content_id):
                               video_url=None,
                               error=f"Unexpected error: {str(e)}")
 
+
 @app.route('/send_message')
 @login_required
 def send_message_page():
@@ -828,9 +909,11 @@ def send_message_page():
             .execute()
         active_employee_ids = [device['employee_id'] for device in active_devices_response.data] if active_devices_response.data else []
 
+
         if not active_employee_ids:
             logging.warning("No active employees found in the database")
             return render_template('send_message.html', employees_json='[]', active_employees=[], departments=[], error="No active employees found. Please activate employees via device registration.")
+
 
         # Fetch employee details for active employee IDs
         employees_response = supabase.table('employees') \
@@ -840,9 +923,11 @@ def send_message_page():
         employees = employees_response.data if employees_response.data else []
         logging.debug(f"Raw Supabase response: {employees_response}")
 
+
         if not employees:
             logging.warning("No employees found matching active device IDs")
             return render_template('send_message.html', employees_json='[]', active_employees=[], departments=[], error="No employees found with active devices.")
+
 
         employees_data = []
         departments = set()
@@ -862,6 +947,7 @@ def send_message_page():
                 logging.error(f"Error parsing email {emp.get('email', 'None')}: {str(e)}")
                 continue
 
+
         employees_json = json.dumps(employees_data)
         departments = sorted(list(departments))
         logging.info(f"Fetched active employees: {len(employees_data)}, departments: {departments}")
@@ -873,6 +959,7 @@ def send_message_page():
         logging.error(f"Unexpected error fetching employees: {str(e)}")
         return render_template('send_message.html', employees_json='[]', active_employees=[], departments=[], error=f"Unexpected error: {str(e)}. Please check server logs.")
 
+
 @app.route('/cortex_logs')
 @login_required
 def cortex_logs():
@@ -882,6 +969,7 @@ def cortex_logs():
             "Authorization": CORTEX_API_KEY,
             "Content-Type": "application/json"
         }
+
 
         payload = {
             "request_data": {
@@ -895,11 +983,14 @@ def cortex_logs():
             }
         }
 
+
         response = requests.post(CORTEX_API_URL, headers=headers, json=payload)
         response.raise_for_status()
 
+
         data = response.json()
         endpoints = data.get('reply', {}).get('endpoints', [])
+
 
         processed_endpoints = []
         for endpoint in endpoints:
@@ -913,8 +1004,10 @@ def cortex_logs():
                 'email': endpoint.get('email', 'N/A')
             })
 
+
         logging.info(f"Fetched {len(processed_endpoints)} endpoints from Cortex XDR API")
         return render_template('cortex_logs.html', endpoints=processed_endpoints)
+
 
     except requests.exceptions.RequestException as e:
         logging.error(f"Error fetching data from Cortex XDR API: {str(e)}")
@@ -922,6 +1015,9 @@ def cortex_logs():
     except Exception as e:
         logging.error(f"Unexpected error in cortex_logs route: {str(e)}")
         return render_template('cortex_logs.html', endpoints=[], error=f"Unexpected error: {str(e)}")
+
+
+
 
 
 
@@ -936,10 +1032,12 @@ def monitor_devices():
         devices = devices_response.data or []
         logging.debug(f"Fetched {len(devices)} devices from Supabase: {devices}")
 
+
         # Fetch all employees to map emails
         employees_response = supabase.table('employees').select('id, email').execute()
         employee_map = {emp['id']: emp['email'] for emp in employees_response.data or []}
         logging.debug(f"Fetched {len(employee_map)} employees from Supabase: {employee_map}")
+
 
         # Prepare headers for Cortex XDR API
         headers = {
@@ -947,6 +1045,7 @@ def monitor_devices():
             "Authorization": CORTEX_API_KEY,
             "Content-Type": "application/json"
         }
+
 
         # Payload for Cortex API
         payload = {
@@ -957,6 +1056,7 @@ def monitor_devices():
                 "sort": {"field": "last_seen", "keyword": "desc"}
             }
         }
+
 
         # Fetch endpoint data from Cortex XDR
         try:
@@ -972,6 +1072,7 @@ def monitor_devices():
             logging.error(f"Cortex XDR API request failed: {str(e)}")
             cortex_endpoints = []
             error_message = f"Cortex XDR API error: {str(e)}"
+
 
         # Create lookup maps
         cortex_hostname_map = {}
@@ -1001,6 +1102,7 @@ def monitor_devices():
         logging.debug(f"Cortex email map keys: {list(cortex_email_map.keys())}")
         logging.debug(f"Cortex ip map keys: {list(cortex_ip_map.keys())}")
 
+
         # Process devices with verification
         processed_devices = []
         for device in devices:
@@ -1010,9 +1112,11 @@ def monitor_devices():
             email = employee_map.get(employee_id, device.get('email', '')).lower().strip()
             ip = device.get('ip', '')
 
+
             is_hostname_valid = bool(hostname and hostname in cortex_hostname_map)
             is_email_valid = bool(email and email in cortex_email_map)
             is_ip_valid = bool(ip and ip in cortex_ip_map)
+
 
             processed_devices.append({
                 'employee_id': employee_id,
@@ -1029,6 +1133,7 @@ def monitor_devices():
                 'is_ip_valid': is_ip_valid
             })
 
+
         # Split devices
         active_devices = [d for d in processed_devices if d['active_status']]
         inactive_devices = [d for d in processed_devices if not d['active_status']]
@@ -1036,12 +1141,14 @@ def monitor_devices():
         logging.debug(f"Active devices: {active_devices}")
         logging.debug(f"Inactive devices: {inactive_devices}")
 
+
         return render_template(
             'monitor_devices.html',
             active_devices=active_devices,
             inactive_devices=inactive_devices,
             error=error_message if 'error_message' in locals() else None
         )
+
 
     except APIError as e:
         logging.error(f"Supabase API error fetching devices: {str(e)}")
@@ -1091,6 +1198,7 @@ def send_message():
         else:
             scheduled_time = datetime.now(timezone.utc)
 
+
         video_url = None
         if 'video' in request.files and request.files['video'].filename:
             video = request.files['video']
@@ -1122,6 +1230,7 @@ def send_message():
             except Exception as e:
                 logging.error(f"Video save failed: {str(e)}")
                 return jsonify({"message": f"Failed to save video: {str(e)}"}), 500
+
 
         image_url = None
         if 'image' in request.files and request.files['image'].filename:
@@ -1165,6 +1274,7 @@ def send_message():
         elif image_url:
             content_type = "image"
 
+
         content_id = str(uuid.uuid4())
         content = {
             "id": content_id,
@@ -1179,6 +1289,7 @@ def send_message():
         logging.debug(f"Inserting content into scheduled_content: {content}")
         result = supabase.table('scheduled_content').insert(content).execute()
         logging.info(f"Supabase insert result: {result}")
+
 
         if not send_now and scheduled_time > datetime.now(timezone.utc):
             schedule_notification(content_id, scheduled_time, valid_employees)
@@ -1204,6 +1315,7 @@ def update_bulk_device_status():
             logging.error("Invalid or missing data for bulk update")
             return jsonify({"message": "Invalid or missing data"}), 400
 
+
         success_count = 0
         for update in data:
             employee_id = update.get('employee_id')
@@ -1212,6 +1324,7 @@ def update_bulk_device_status():
                 logging.error(f"Missing required fields for employee_id: {employee_id}")
                 continue
 
+
             # Step 1: Fetch employee email (required for NOT NULL)
             employee_resp = supabase.table('employees').select('email').eq('id', employee_id).execute()
             if not employee_resp.data:
@@ -1219,6 +1332,7 @@ def update_bulk_device_status():
                 continue
             email = employee_resp.data[0]['email']  # Guaranteed NOT NULL from schema
             logging.debug(f"Fetched email for {employee_id}: {email}")
+
 
             # Step 2: Fetch existing device data (with safe check)
             existing_device = supabase.table('employee_devices').select('status, app_running, ip, device_type, hostname').eq('employee_id', employee_id).execute().data
@@ -1239,6 +1353,7 @@ def update_bulk_device_status():
                 hostname = 'unknown-host'  # FIXED: Required, always string
                 logging.warning(f"No existing device for {employee_id}; using defaults, email={email}")
 
+
             # Step 3: Build device_data with ALL required fields (no None for NOT NULL)
             device_data = {
                 "employee_id": employee_id,
@@ -1254,9 +1369,11 @@ def update_bulk_device_status():
             }
             # FIXED: DON'T filter None for required fields—only optionals if needed (but here, all required are set)
 
+
             supabase.table('employee_devices').upsert(device_data, on_conflict='employee_id').execute()
             success_count += 1
             logging.info(f"Device status updated for employee: {employee_id} to active_status: {active_status}, hostname: {hostname}, email: {email}")
+
 
         return jsonify({"message": f"Bulk device status updated successfully ({success_count} devices)"})
     except APIError as e:
@@ -1309,6 +1426,7 @@ def get_content(employee_id):
             "notifications": []
         }), 500
 
+
 @app.route('/devices')
 @login_required
 def devices():
@@ -1319,6 +1437,7 @@ def devices():
     except Exception as e:
         logging.error(f"Error fetching devices: {str(e)}")
         return jsonify({"message": f"Error fetching devices: {str(e)}"}), 500
+
 
 @app.route('/get_or_create_employee', methods=['POST'])
 def get_or_create_employee():
@@ -1344,6 +1463,7 @@ def get_or_create_employee():
         logging.error(f"Unexpected error getting/creating employee: {str(e)}")
         return jsonify({"message": f"Unexpected error getting/creating employee: {str(e)}"}), 500
 
+
 @app.route('/register_device', methods=['POST'])
 def register_device():
     try:
@@ -1368,6 +1488,7 @@ def register_device():
             "app_running": True
         }
 
+
         if ip:
             device_data_base["ip"] = ip
         if device_type:
@@ -1390,6 +1511,7 @@ def register_device():
     except Exception as e:
         logging.error(f"Unexpected error registering device: {str(e)}")
         return jsonify({"message": f"Unexpected error registering device: {str(e)}"}), 500
+
 
         
 @app.route('/set_message_delay', methods=['POST'])
@@ -1435,12 +1557,14 @@ def set_message_delay():
             logging.error(f"Failed to parse scheduled_time {scheduled_time_str}: {str(e)}")
             return jsonify({"message": f"Invalid scheduled_time format: {str(e)}"}), 400
 
+
         # For delayed options, use current local time as base and add delay
         current_local_time = datetime.now(timezone(offset=timedelta(hours=5, minutes=30)))  # +0530
         if delay_choice in ["Play within 15 minutes", "Play within 30 minutes", "Play within 1 hour", "Play within 3 hours"]:
             display_time = current_local_time + delay
         else:  # "Play Immediate"
             display_time = max(scheduled_time, datetime.now(timezone.utc))
+
 
         # Convert display_time to UTC for storage
         display_time_utc = display_time.astimezone(timezone.utc)
@@ -1499,6 +1623,7 @@ def receive_feedback():
         logging.error(f"Error receiving feedback: {str(e)}")
         return jsonify({"message": f"Error receiving feedback: {str(e)}"}), 500
 
+
 @app.route('/reaction', methods=['POST'])  
 def record_reaction():
     try:
@@ -1515,12 +1640,14 @@ def record_reaction():
             logging.error(f"Invalid reaction type: {reaction}")
             return jsonify({"message": "Invalid reaction type"}), 400
 
+
         # Check if a reaction already exists for this content_id and employee_id
         existing_reaction = supabase.table('reactions')\
             .select('id', 'reaction', 'timestamp')\
             .eq('content_id', content_id)\
             .eq('employee_id', employee_id)\
             .execute().data
+
 
         if existing_reaction:
             # Update the existing reaction
@@ -1560,6 +1687,7 @@ def record_reaction():
                     raise
             logging.info(f"Reaction recorded: {reaction} for content_id {content_id}, employee_id {employee_id}")
 
+
         return jsonify({"message": "Reaction recorded successfully"})
     except APIError as e:
         logging.error(f"Supabase API error recording reaction: {str(e)}")
@@ -1588,6 +1716,7 @@ def update_device_status():
         email = employee_resp.data[0]['email']  # Guaranteed NOT NULL
         logging.debug(f"Fetched email for {employee_id}: {email}")
 
+
         # Step 2: Fetch existing device data (with safe check)
         existing_device = supabase.table('employee_devices').select('status, app_running, ip, device_type, hostname').eq('employee_id', employee_id).execute().data
         if existing_device:
@@ -1606,6 +1735,7 @@ def update_device_status():
             device_type = None
             hostname = 'unknown-host'
             logging.warning(f"No existing device for {employee_id}; using defaults, email={email}")
+
 
         # Step 3: Build device_data with client overrides + ALL required fields
         device_data = {
@@ -1628,6 +1758,7 @@ def update_device_status():
         if not device_data.get('status'):
             device_data['status'] = 'online'
 
+
         supabase.table('employee_devices').upsert(device_data, on_conflict='employee_id').execute()
         logging.info(f"Device status updated for employee: {employee_id} to active_status: {active_status}, hostname: {device_data['hostname']}, email: {device_data['email']}")
         return jsonify({"message": "Device status updated successfully"})
@@ -1645,6 +1776,7 @@ def record_view():
         content_id = data.get('content_id')
         employee_id = data.get('employee_id')
         viewed_duration = data.get('viewed_duration', 0)
+
 
         if not content_id or not employee_id:
             logging.error("Missing required fields in record_view: content_id or employee_id")
@@ -1694,6 +1826,7 @@ def get_employee_views(employee_id):
         logging.error(f"Unexpected error fetching views for employee {employee_id}: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}", "views": []}), 500
 
+
 @app.route('/content_views/<content_id>', methods=['GET'])
 @login_required
 def get_content_views(content_id):
@@ -1729,3 +1862,4 @@ def get_content_views(content_id):
      
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
+

@@ -59,7 +59,7 @@ logging.basicConfig(
 
 class StudentApp(QMainWindow):
     APP_VERSION = "1.1.3"
-    SERVER_URL = "https://hrnotification.acorngroup.lk"
+    SERVER_URL = "http://10.50.5.49:5000/"
     new_content_signal = Signal(dict)
     update_scroll_signal = Signal()
 
@@ -82,7 +82,7 @@ class StudentApp(QMainWindow):
         self.employee_id = None
         self.employee_email = None
         self.ip = self.get_ip()
-        self.server_url = "https://hrnotification.acorngroup.lk/"
+        self.server_url = "http://10.50.5.49:5000/"
         self.add_to_registry()
         self.device_type = self.get_device_type()
         self.hostname = self.get_hostname()
