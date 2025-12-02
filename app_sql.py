@@ -135,7 +135,7 @@ CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID")
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
-UPLOAD_DIR = "E:\\hr_notification\\uploads"
+UPLOAD_DIR = "hr_notification\\uploads"
 VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
