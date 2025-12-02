@@ -39,7 +39,7 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 # Connection pool (recommended)
 db_pool = None
 
-SERVER_URL = "http://10.50.5.49:5000"
+SERVER_URL = "http://127.0.0.1:5000/"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -58,47 +58,58 @@ def get_db_connection():
                 port=MYSQL_PORT,
                 autocommit=True,
                 charset='utf8mb4',
-                init_command='SET SESSION time_zone = "+00:00"'  # ← ADD THIS LINE
+                init_command='SET SESSION time_zone = "+00:00"'
             )
             logging.info("MySQL connection pool created successfully")
         except Error as e:
             logging.critical(f"Failed to create MySQL pool: {e}")
-            exit(1)
+            # DO NOT exit() — just return None and let execute_query handle it
+            return None
+    
     try:
         return db_pool.get_connection()
-    except Error:
-        # Fallback connection – ADD init_command here too
-        return mysql.connector.connect(
-            host=MYSQL_HOST,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=MYSQL_DATABASE,
-            port=MYSQL_PORT,
-            autocommit=True,
-            init_command='SET SESSION time_zone = "+00:00"',  # ← ADD THIS LINE
-            charset='utf8mb4'
-        )
-    
+    except Error as e:
+        logging.error(f"Failed to get connection from pool: {e}")
+        # Try direct connection as fallback
+        try:
+            return mysql.connector.connect(
+                host=MYSQL_HOST,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=MYSQL_DATABASE,
+                port=MYSQL_PORT,
+                autocommit=True,
+                charset='utf8mb4',
+                init_command='SET SESSION time_zone = "+00:00"'
+            )
+        except Error as e2:
+            logging.error(f"Direct connection also failed: {e2}")
+            return None
+            
 def execute_query(query, params=None, fetch=False, commit=False):
     conn = get_db_connection()
+    if conn is None:
+        logging.error("No database connection available")
+        raise mysql.connector.Error("Database unavailable")
+    
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(query, params or ())
         result = None
         if fetch:
-            result = cursor.fetchall()  # ← Always consume all rows
+            result = cursor.fetchall()
         if commit:
             conn.commit()
         return {"data": result or []}
     except Exception as e:
         if conn:
             conn.rollback()
-        logging.error(f"Query failed: {query} | Params: {params} | Error: {e}")
+        logging.error(f"Query failed: {query} | Error: {e}")
         raise e
     finally:
-        cursor.close()        # ← Always close cursor
-        conn.close()         # ← Always close connection
-
+        cursor.close()
+        if conn:
+            conn.close()
 
 def format_datetime_for_client(dt):
     """
