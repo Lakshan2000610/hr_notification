@@ -1,60 +1,119 @@
 {% extends "base.html" %}
+{% block title %}Upload New App Version{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h2>Upload New App Version</h2>
+<style>
+    body { background: #F5F0FF; font-family: 'Segoe UI', sans-serif; }
+    .container { max-width: 1100px; margin: 40px auto; padding: 30px; background: white; border-radius: 20px; box-shadow: 0 15px 40px rgba(127,95,207,0.15); }
+    h2, h4 { color: #7F5FCF; font-weight: 700; }
+    .badge { font-size: 1em; padding: 8px 16px; border-radius: 12px; }
+    .btn-primary {
+        background: linear-gradient(135deg, #7F5FCF, #9D7BE1);
+        border: none; border-radius: 12px; padding: 12px 24px;
+        font-weight: 600; transition: all 0.3s;
+    }
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #6B4BB8, #8B66D4);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(127,95,207,0.3);
+    }
+    .btn-danger {
+        background: #e74c3c; border: none; border-radius: 8px; font-size: 0.9em;
+    }
+    .btn-danger:hover { background: #c0392b; }
+    .btn-secondary { background: #B6A3D8; border: none; }
+    .btn-secondary:hover { background: #9f8cc4; }
+    .table { border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    .table thead { background: #7F5FCF; color: white; }
+    .table tbody tr:hover { background: #f8f4ff; }
+    .current-badge {
+        background: #27ae60; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.8em;
+    }
+    .section-title {
+        color: #7F5FCF; font-weight: 700; font-size: 1.3em; margin: 30px 0 15px;
+        position: relative; padding-bottom: 8px;
+    }
+    .section-title::after {
+        content: ''; position: absolute; left: 0; bottom: 0;
+        width: 80px; height: 4px; background: linear-gradient(90deg, #7F5FCF, #B6A3D8); border-radius: 2px;
+    }
+    .alert { border-radius: 12px; }
+</style>
 
-    <!-- Page Status Indicator -->
+<div class="container">
+    <h2 class="mb-4">Upload New App Version</h2>
+
+    <!-- Page Status -->
     <div class="mb-4">
         <h4>Page Status</h4>
         <span id="page-status" class="badge bg-secondary">Checking readiness...</span>
     </div>
 
-    <!-- Current Version and Download Link -->
-    <div class="mb-4">
-        <h4>Current Version</h4>
+    <!-- Current Version -->
+    <div class="mb-5">
+        <h4>Current Active Version</h4>
         {% if current_version %}
-            <p>Current Version: {{ current_version }}</p>
+            <p><strong>{{ current_version }}</strong> <span class="current-badge">LIVE</span></p>
             <a href="{{ url_for('get_app') }}" class="btn btn-secondary" download>Download Current app.exe</a>
         {% else %}
-            <p>No version file found.</p>
+            <p class="text-muted">No version uploaded yet.</p>
         {% endif %}
     </div>
 
-    <!-- Install Status -->
-    <div class="mb-4">
-        <h4>Install Status</h4>
-        <div id="install-status" class="alert alert-info" role="alert">
-            <p>Loading install status...</p>
-        </div>
-        <table class="table table-bordered mt-3" id="status-table">
+    <!-- Version History Table -->
+    <div class="section-title">Uploaded Version History</div>
+    <div class="table-responsive">
+        <table class="table table-bordered" id="version-table">
             <thead>
                 <tr>
-                    <th>Employee ID</th>
-                    <th>Device ID</th>
                     <th>Version</th>
+                    <th>Uploaded On</th>
+                    <th>Uploaded By</th>
                     <th>Status</th>
-                    <th>Last Attempted</th>
-                    <th>Error Message</th>
+                    <th>Action</th>
                 </tr>
             </thead>
-            <tbody></tbody>
+            <tbody>
+                {% for v in version_history %}
+                <tr data-version="{{ v.version }}">
+                    <td><strong>{{ v.version }}</strong></td>
+                    <td>{{ v.uploaded_at.strftime("%d %b %Y, %I:%M %p") }}</td>
+                    <td>{{ v.uploaded_by or "Unknown" }}</td>
+                    <td>
+                        {% if v.version == current_version %}
+                            <span class="current-badge">Current Active</span>
+                        {% else %}
+                            <span class="text-muted">Archived</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if v.version != current_version %}
+                            <button class="btn btn-danger btn-sm delete-version" data-version="{{ v.version }}">
+                                Delete
+                            </button>
+                        {% else %}
+                            <em>Cannot delete active version</em>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
         </table>
+        {% if version_history|length == 0 %}
+            <p class="text-center text-muted mt-3">No version history yet.</p>
+        {% endif %}
     </div>
-
-    <!-- Error and Success Messages -->
-    {% if error %}
-    <div class="alert alert-danger" role="alert">
-        {{ error }}
-    </div>
-    {% endif %}
-    {% if success %}
-    <div class="alert alert-success" role="alert">
-        {{ success }}
-    </div>
-    {% endif %}
 
     <!-- Upload Form -->
-    <form method="post" enctype="multipart/form-data">
+    <div class="section-title mt-5">Upload New Version</div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} mt-3">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="post" enctype="multipart/form-data" class="mt-4">
         <div class="mb-3">
             <label for="version_file" class="form-label">Version File (version.txt)</label>
             <input type="file" class="form-control" id="version_file" name="version_file" accept=".txt" required>
@@ -63,83 +122,124 @@
             <label for="exe_file" class="form-label">Application File (app.exe)</label>
             <input type="file" class="form-control" id="exe_file" name="exe_file" accept=".exe" required>
         </div>
-        <button type="submit" class="btn btn-primary">Upload</button>
+        <button type="submit" class="btn btn-primary">Upload New Version</button>
     </form>
 
-    <!-- Endpoint Information -->
-    <div class="mt-4">
-        <h4>Update Status Endpoints</h4>
-        <p>Use the following endpoints to track update status for devices:</p>
-        <ul>
-            <li><strong>Summary Endpoint</strong>: <code>/update_status/summary</code> - Returns counts of successful, pending, and failed updates.</li>
-            <li><strong>Success Endpoint</strong>: <code>/update_status/success</code> - Returns devices that successfully installed the latest version.</li>
-            <li><strong>Pending Endpoint</strong>: <code>/update_status/pending</code> - Returns devices with pending updates.</li>
-            <li><strong>Failed Endpoint</strong>: <code>/update_status/failed</code> - Returns devices that failed to install the latest version.</li>
+    <!-- Install Status -->
+    <div class="section-title mt-5">Live Installation Status</div>
+    <div id="install-status" class="alert alert-info">
+        <p>Loading install status...</p>
+    </div>
+    <div class="table-responsive mt-3">
+        <table class="table table-bordered" id="status-table">
+            <thead>
+                <tr>
+                    <th>Employee ID</th>
+                    <th>Device ID</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Last Attempt</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Endpoints Info -->
+    <div class="mt-5 p-4 bg-light rounded">
+        <h5>Update Status Endpoints</h5>
+        <ul class="small">
+            <li><code>/update_status/summary</code> → Success/Pending/Failed counts</li>
+            <li><code>/update_status/all</code> → Full device status list</li>
         </ul>
     </div>
 </div>
 
-<!-- JavaScript for Fetching Page and Install Status -->
 <script>
+    // Fetch page readiness
     async function fetchPageStatus() {
         try {
-            const response = await fetch('/check_upload_readiness');
-            const data = await response.json();
-            const statusSpan = document.getElementById('page-status');
-            if (response.ok && data.status === 'ready') {
-                statusSpan.className = 'badge bg-success';
-                statusSpan.textContent = 'Ready to Upload';
+            const res = await fetch('/check_upload_readiness');
+            const data = await res.json();
+            const el = document.getElementById('page-status');
+            if (res.ok && data.status === 'ready') {
+                el.className = 'badge bg-success';
+                el.textContent = 'Ready to Upload';
             } else {
-                statusSpan.className = 'badge bg-danger';
-                statusSpan.textContent = data.message || 'Upload Not Ready';
+                el.className = 'badge bg-danger';
+                el.textContent = data.message || 'Upload Blocked';
             }
-        } catch (error) {
+        } catch (e) {
             document.getElementById('page-status').className = 'badge bg-danger';
-            document.getElementById('page-status').textContent = 'Error checking readiness';
+            document.getElementById('page-status').textContent = 'Error';
         }
     }
 
+    // Fetch install status
     async function fetchInstallStatus() {
         try {
-            const response = await fetch('/update_status/summary');
-            const data = await response.json();
-            const statusDiv = document.getElementById('install-status');
-            const tableBody = document.getElementById('status-table').querySelector('tbody');
-            if (response.ok) {
-                statusDiv.className = 'alert alert-info';
-                statusDiv.innerHTML = `
-                    <p><strong>Successful Installs</strong>: ${data.successful}</p>
-                    <p><strong>Pending Installs</strong>: ${data.pending}</p>
-                    <p><strong>Failed Installs</strong>: ${data.failed}</p>
-                    <p><small>Last updated: ${new Date().toLocaleString()}</small></p>
+            const res = await fetch('/update_status/summary');
+            const data = await res.json();
+            const div = document.getElementById('install-status');
+            const tbody = document.getElementById('status-table').querySelector('tbody');
+
+            if (res.ok) {
+                div.innerHTML = `
+                    <p><strong>Successful:</strong> ${data.successful} | 
+                       <strong>Pending:</strong> ${data.pending} | 
+                       <strong>Failed:</strong> ${data.failed}</p>
+                    <small>Last updated: ${new Date().toLocaleString()}</small>
                 `;
-                // Fetch detailed status for table
-                const detailResponse = await fetch('/update_status/all');
-                const details = await detailResponse.json();
-                tableBody.innerHTML = '';
-                details.forEach(record => {
+
+                const detailRes = await fetch('/update_status/all');
+                const details = await detailRes.json();
+                tbody.innerHTML = '';
+                details.forEach(r => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td>${record.employee_id}</td>
-                        <td>${record.device_id}</td>
-                        <td>${record.version}</td>
-                        <td>${record.status}</td>
-                        <td>${new Date(record.last_attempted_at).toLocaleString()}</td>
-                        <td>${record.error_message || '-'}</td>
+                        <td>${r.employee_id || '-'}</td>
+                        <td>${r.device_id}</td>
+                        <td>${r.version || '—'}</td>
+                        <td><strong>${r.status || 'unknown'}</strong></td>
+                        <td>${r.last_attempted_at ? new Date(r.last_attempted_at).toLocaleString() : '—'}</td>
+                        <td>${r.error_message || '—'}</td>
                     `;
-                    tableBody.appendChild(row);
+                    tbody.appendChild(row);
                 });
-            } else {
-                statusDiv.className = 'alert alert-warning';
-                statusDiv.innerHTML = `<p>Error fetching install status: ${data.error}</p>`;
             }
-        } catch (error) {
-            document.getElementById('install-status').className = 'alert alert-danger';
-            document.getElementById('install-status').innerHTML = `<p>Error fetching install status: ${error.message}</p>`;
+        } catch (e) {
+            document.getElementById('install-status').innerHTML = '<p class="text-danger">Failed to load status</p>';
         }
     }
 
-    // Fetch statuses initially and every 30 seconds
+    // Delete Version
+    document.addEventListener('click', async function(e) {
+        if (e.target.classList.contains('delete-version')) {
+            const version = e.target.getAttribute('data-version');
+            if (!confirm(`Delete version ${version} permanently?\nThis will remove the backup files.`)) return;
+
+            try {
+                const res = await fetch('/delete_version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ version: version })
+                });
+                const result = await res.json();
+
+                if (res.ok) {
+                    e.target.closest('tr').remove();
+                    alert(`Version ${version} deleted successfully.`);
+                } else {
+                    alert(result.error || 'Delete failed');
+                }
+            } catch (err) {
+                alert('Network error');
+            }
+        }
+    });
+
+    // Auto-refresh
     fetchPageStatus();
     fetchInstallStatus();
     setInterval(fetchPageStatus, 30000);

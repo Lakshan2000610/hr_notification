@@ -57,7 +57,8 @@ def get_db_connection():
                 database=MYSQL_DATABASE,
                 port=MYSQL_PORT,
                 autocommit=True,
-                charset='utf8mb4'
+                charset='utf8mb4',
+                init_command='SET SESSION time_zone = "+00:00"'  # ← ADD THIS LINE
             )
             logging.info("MySQL connection pool created successfully")
         except Error as e:
@@ -66,15 +67,18 @@ def get_db_connection():
     try:
         return db_pool.get_connection()
     except Error:
+        # Fallback connection – ADD init_command here too
         return mysql.connector.connect(
             host=MYSQL_HOST,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
             database=MYSQL_DATABASE,
             port=MYSQL_PORT,
-            autocommit=True
+            autocommit=True,
+            init_command='SET SESSION time_zone = "+00:00"',  # ← ADD THIS LINE
+            charset='utf8mb4'
         )
-
+    
 def execute_query(query, params=None, fetch=False, commit=False):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -368,6 +372,7 @@ def home():
             else:
                 sent_date_str = "—"
 
+            sent_date_str = sent_date.strftime("%d %b %Y, %I:%M %p")  # One line format
             content_stats.append({
                 'id': content_id,
                 'title': content.get('title', 'No title'),
@@ -377,7 +382,8 @@ def home():
                 'cry_count': reaction_counts.get('cry', 0),
                 'feedback_count': feedback_count,
                 'view_count': view_count,
-                'sent_date': sent_date_str  # New field
+                'sent_date_one_line': sent_date_str,           # ← New: One line
+                'sent_date_raw': sent_date.isoformat() if sent_date else ''  # ← For filter
             })
 
         # Pagination
@@ -690,7 +696,33 @@ def upload_version():
             if 'temp_version_path' in locals() and os.path.exists(temp_file):
                 os.remove(temp_file)
 
+@app.route('/delete_version', methods=['POST'])
+@login_required
+def delete_version():
+    data = request.get_json()
+    version = data.get('version')
+    if not version:
+        return jsonify({"error": "Version required"}), 400
 
+    backup_dir = os.path.join(app.config['UPLOAD_FOLDER'], "backups")
+    version_backup = os.path.join(backup_dir, f"app_{version}.exe")
+    version_txt_backup = os.path.join(backup_dir, f"version_{version}.txt")
+
+    try:
+        if os.path.exists(version_backup):
+            os.remove(version_backup)
+        if os.path.exists(version_txt_backup):
+            os.remove(version_txt_backup)
+
+        # Also remove from version_history DB table if you have one
+        execute_query("DELETE FROM version_history WHERE version = %s", (version,), commit=True)
+
+        logger.info(f"Version {version} deleted by {session['user_email']}")
+        return jsonify({"message": "Deleted"}), 200
+    except Exception as e:
+        logger.error(f"Delete failed: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 @app.route('/update_status/summary', methods=['GET'])
 @login_required
 def update_status_summary():
@@ -782,6 +814,22 @@ def view_reactions(content_id):
         else:
             content = content_data[0]
 
+        views_result = execute_query("""
+            SELECT v.viewed_duration, v.timestamp, COALESCE(e.email, v.employee_id) as email
+            FROM views v
+            LEFT JOIN employees e ON v.employee_id = e.id
+            WHERE v.content_id = %s
+            ORDER BY v.timestamp DESC
+        """, (content_id,), fetch=True)
+        views = views_result.get("data", []) or []
+        views_details = [
+            {
+                'employee_email': v['email'],
+                'viewed_duration': v['viewed_duration'],
+                'timestamp': v['timestamp'].strftime("%d %b %Y, %I:%M %p") if v['timestamp'] else '—'
+            }
+            for v in views
+        ]
         # Reactions with email
         reactions_result = execute_query(
             "SELECT r.reaction, r.timestamp, COALESCE(e.email, r.employee_id) as email "
@@ -789,6 +837,7 @@ def view_reactions(content_id):
             "WHERE r.content_id = %s ORDER BY r.timestamp DESC",
             (content_id,), fetch=True
         )
+        logging.debug(f"Reactions query result: {reactions_result}")
         reactions = reactions_result.get("data", []) or []
 
         # Feedback with email
@@ -809,7 +858,7 @@ def view_reactions(content_id):
             }
             for r in reactions
         ]
-
+        logging.debug(f"Formatted reaction details: {reaction_details}")
         feedback_details = [
             {
                 'employee_email': f['email'],
@@ -820,16 +869,17 @@ def view_reactions(content_id):
         ]
 
         return render_template('view_react.html',
-                              content_id=content_id,
-                              content_title=content.get('title', 'No Title'),
-                              content_text=content.get('text', ''),
-                              content_type=content.get('type', 'text'),
-                              image_url=content.get('image_url'),
-                              video_url=content.get('url'),
-                              reaction_details=reaction_details,        # ← RAW Python list!
-                              feedback_details=feedback_details,
-                              error=None)
-        
+                       content_id=content_id,
+                       content_title=content.get('title', 'No Title'),
+                       content_text=content.get('text', ''),
+                       content_type=content.get('type', 'text'),
+                       image_url=content.get('image_url'),
+                       video_url=content.get('url'),
+                       reaction_details=reaction_details or [],   # ← Add "or []"
+                       feedback_details=feedback_details or [],
+                       views_details=views_details or [],
+                       error=None)
+
     except Exception as e:
         logging.error(f"Error in view_reactions/{content_id}: {e}", exc_info=True)
         return render_template('view_react.html',
@@ -841,6 +891,7 @@ def view_reactions(content_id):
                               video_url=None,
                               reaction_details="[]",
                               feedback_details=[],
+                              views_details=[],
                               error="Failed to load data")
             
 
@@ -1164,16 +1215,16 @@ def send_message():
         scheduled_time = None
         if not send_now and scheduled_time_str:
             try:
-                # Parse with +0530 timezone (Sri Lanka time)
+                # Parse as Sri Lanka time (UTC+5:30)
                 scheduled_time = datetime.strptime(scheduled_time_str, '%Y-%m-%dT%H:%M').replace(
                     tzinfo=timezone(timedelta(hours=5, minutes=30))
                 )
                 # Convert to UTC for storage
                 scheduled_time = scheduled_time.astimezone(timezone.utc)
-                logging.debug(f"Parsed scheduled_time: {scheduled_time}")
+                logging.debug(f"Parsed scheduled_time (UTC): {scheduled_time}")
             except ValueError as e:
-                logging.error(f"Invalid scheduled_time format: {scheduled_time_str}, error: {str(e)}")
-                return jsonify({"message": f"Invalid scheduled_time format: {str(e)}"}), 400
+                logging.error(f"Invalid scheduled_time format: {scheduled_time_str}")
+                return jsonify({"message": "Invalid date/time format"}), 400
         else:
             scheduled_time = datetime.now(timezone.utc)
 
@@ -1262,16 +1313,16 @@ def send_message():
             "text": text,
             "image_url": image_url,
             "url": video_url,
-            "scheduled_time": scheduled_time.strftime('%Y-%m-%d %H:%M:%S'), 
+            "scheduled_time": scheduled_time.strftime('%Y-%m-%d %H:%M:%S'),
             "employees": valid_employees,
         }
+
         logging.debug(f"Inserting content into scheduled_content: {content}")
 
         execute_query("""
-            INSERT INTO scheduled_content 
+            INSERT INTO scheduled_content
                 (id, type, title, text, image_url, url, scheduled_time, employees)
-            VALUES 
-                (%(id)s, %(type)s, %(title)s, %(text)s, %(image_url)s, %(url)s, %(scheduled_time)s, %(employees)s)
+            VALUES (%(id)s, %(type)s, %(title)s, %(text)s, %(image_url)s, %(url)s, %(scheduled_time)s, %(employees)s)
         """, {
             'id': content['id'],
             'type': content['type'],
@@ -1280,12 +1331,10 @@ def send_message():
             'image_url': content.get('image_url'),
             'url': content.get('url'),
             'scheduled_time': content['scheduled_time'],
-            'employees': json.dumps(content['employees'])  # Store list as JSON string
+            'employees': json.dumps(content['employees'])
         }, commit=True)
 
         logging.info(f"Content inserted successfully: {content['id']}")
-
-
 
         if not send_now and scheduled_time > datetime.now(timezone.utc):
             schedule_notification(content_id, scheduled_time, valid_employees)
@@ -1294,6 +1343,7 @@ def send_message():
         
         logging.info(f"Message scheduled successfully: {content_id}, employees: {valid_employees}")
         return jsonify({"message": "Message scheduled successfully", "content_id": content_id})
+    
     except mysql.connector.Error as e:
             logging.error(f"MySQL error in send_message: {e}")
             return jsonify({"message": "Database error. Please try again later."}), 500

@@ -1,92 +1,120 @@
 {% extends "base.html" %}
 {% block title %}View Reactions - {{ content_id }}{% endblock %}
-
 {% block content %}
 <style>
-    body { margin:0; padding:0; background:#ece4f7; font-family:'Segoe UI',Arial,sans-serif; overflow-x:hidden; }
-    .content-container { margin-top:80px; padding:30px 20px; max-width:1400px; margin:auto; position:relative; z-index:1; }
-    .content-header { background:white; padding:25px; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,0.1); margin-bottom:30px; text-align:center; }
-    .content-header h2 { color:#333; margin:0 0 15px; font-size:28px; }
-    .content-header p { color:#555; font-size:18px; line-height:1.6; margin:0; }
-    .media-container { margin:30px auto; text-align:center; }
-    .media-container video, .media-container img { max-width:100%; height:auto; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); }
-    .section { display:flex; flex-wrap:wrap; gap:30px; margin:40px 0; justify-content:center; }
-    .chart-container, .table-container { background:white; padding:25px; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,0.1); flex:1; min-width:300px; max-width:600px; }
-    .chart-container h2, .table-container h2 { text-align:center; color:#333; margin:0 0 20px; }
-    table { width:100%; border-collapse:collapse; background:#fff; }
-    th, td { padding:14px; text-align:left; border-bottom:1px solid #eee; }
-    th { background:#f8f9fa; font-weight:600; color:#333; }
-    tr:hover { background:#f5f5f5; }
-    .pagination { text-align:center; margin-top:15px; }
+    :root {
+        --primary: #7F5FCF;
+        --light: #B6A3D8;
+        --bg: #F5F0FF;
+        --success: #4CAF50;
+        --danger: #F44336;
+        --heart: #E91E63;
+        --cry: #9C27B0;
+    }
+
+    body { margin:0; padding:0; background:var(--bg); font-family:'Segoe UI',sans-serif; overflow-x:hidden; }
+    .page-container { max-width:1400px; margin:50px auto; padding:0 20px; position:relative; z-index:1; }
     
-    .pagination button { padding:8px 14px; margin:0 4px; border:1px solid #b8a9d9; background:white; border-radius:6px; cursor:pointer; }
-    .pagination button:hover:not(:disabled) { background:#b8a9d9; color:white; }
-    .pagination button:disabled { opacity:0.5; cursor:not-allowed; }
+    .content-row {
+        display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start;
+        background: white; padding: 35px; border-radius: 24px;
+        box-shadow: 0 15px 40px rgba(127,95,207,0.15); margin-bottom: 40px;
+        border: 1px solid rgba(182,163,216,0.2);
+    }
+    .content-text { flex: 1; min-width: 300px; }
+    .content-text h1 {
+        font-size: 2.4em; color: #5D3FA3; margin: 0 0 18px;
+        word-break: break-word; line-height: 1.3;
+    }
+    .content-text p {
+        font-size: 1.25em; color: #555; line-height: 1.8;
+        max-width: 60ch;
+    }
+    .content-media { flex: 1; min-width: 300px; text-align: center; }
+    .content-media img, .content-media video {
+        max-width: 100%; max-height: 520px; border-radius: 18px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2); object-fit: contain;
+    }
+
+    .section-row { 
+        display: flex; flex-wrap: wrap; gap: 30px; margin: 50px 0; justify-content: center; 
+    }
+    .chart-box, .table-box {
+        background: white; padding: 30px; border-radius: 22px;
+        box-shadow: 0 12px 35px rgba(0,0,0,0.1); flex: 1; min-width: 300px; max-width: 620px;
+        border: 1px solid rgba(182,163,216,0.15);
+    }
+    .chart-box h2, .table-box h2 { 
+        text-align: center; color: #5D3FA3; margin: 0 0 25px; font-size: 1.7em; font-weight: 700;
+        background: linear-gradient(90deg, var(--primary), #9D7BE1);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    table { width:100%; border-collapse: collapse; font-size: 0.98em; }
+    th { background: #f8f5ff; padding: 16px; text-align: left; font-weight: 600; color: #5D3FA3; }
+    td { padding: 16px; border-bottom: 1px solid #eee; }
+    tr:hover { background: #f8f4ff; }
+
+    .emoji { font-size: 1.8em; text-align: center; }
+    .no-data { text-align: center; color: #888; font-style: italic; padding: 40px; font-size: 1.1em; }
+
     .snow-container { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
-    .snow-emoji { position:absolute; font-size:28px; animation:snow-fall linear forwards; user-select:none; }
-    @keyframes snow-fall { 0%{transform:translateY(-100px) rotate(0deg);opacity:1} 100%{transform:translateY(100vh) rotate(360deg);opacity:0} }
-    .no-data { text-align:center; color:#777; font-style:italic; padding:40px; }
+    .snow-emoji { position:absolute; font-size:34px; animation:fall linear forwards; user-select:none; opacity:0.9; }
+    @keyframes fall {
+        0% { transform:translateY(-100px) rotate(0deg); opacity:1; }
+        100% { transform:translateY(110vh) rotate(360deg); opacity:0; }
+    }
+
+    @media (max-width: 992px) {
+        .content-row, .section-row { flex-direction: column; text-align: center; }
+        .content-media { order: -1; }
+    }
 </style>
 
-<div class="content-container">
-    {% if error %}
-    <div style="background:#ffebee;color:#c62828;padding:20px;border-radius:12px;margin-bottom:20px;">
-        <strong>Error:</strong> {{ error }}
-    </div>
-    {% endif %}
-
-    <!-- Message Content -->
-    <div class="content-header">
-        <h2>{{ content_title }}</h2>
-        <p>{{ content_text }}</p>
-    </div>
-
-    <!-- Media Display -->
-    {% if content_type in ['image', 'video', 'both'] and (image_url or video_url) %}
-    <div class="media-container">
-        {% if video_url and content_type in ['video', 'both'] %}
-        <video controls style="max-width:700px;">
-            <source src="{{ video_url }}" type="video/mp4">
-            Your browser does not support video.
-        </video>
-        {% endif %}
-        {% if image_url and content_type in ['image', 'both'] %}
-        <div style="margin-top:20px;">
-            <img src="{{ image_url }}" alt="Message Image">
+<div class="page-container">
+    <!-- Title + Media -->
+    <div class="content-row">
+        <div class="content-text">
+            <h1>{{ content_title }}</h1>
+            <p>{{ content_text }}</p>
         </div>
-        {% endif %}
+        <div class="content-media">
+            {% if video_url and content_type in ['video', 'both'] %}
+                <video controls style="width:100%;max-width:600px;"><source src="{{ video_url }}" type="video/mp4"></video>
+            {% endif %}
+            {% if image_url and content_type in ['image', 'both'] %}
+                <img src="{{ image_url }}" alt="Message Image">
+            {% endif %}
+            {% if not image_url and not video_url %}
+                <p class="text-muted">No media attached</p>
+            {% endif %}
+        </div>
     </div>
-    {% endif %}
 
-    <!-- Reactions Chart + Table -->
-    <div class="section">
-        <div class="chart-container">
+    <!-- Reaction Statistics + Latest 5 -->
+    <div class="section-row">
+        <div class="chart-box">
             <h2>Reaction Statistics</h2>
             <canvas id="reactionChart"></canvas>
         </div>
-
-        <div class="table-container">
-            <h2>Individual Reactions</h2>
-            <table id="reactionTable">
-                <thead>
-                    <tr><th>Employee</th><th>Reaction</th><th>Time</th></tr>
-                </thead>
-                <tbody id="reactionTableBody"></tbody>
+        <div class="table-box">
+            <h2>Latest Reactions (5)</h2>
+            <table>
+                <thead><tr><th>Employee</th><th>Reaction</th><th>Time</th></tr></thead>
+                <tbody id="recentReactions"></tbody>
             </table>
-            <div class="pagination" id="reactionPagination"></div>
-            <div id="noReactions" class="no-data" style="display:none;">No reactions yet</div>
+            <div id="noReactions" class="no-data">No reactions yet</div>
         </div>
     </div>
 
-    <!-- Feedback + Department Chart -->
-    <div class="section">
-        <div class="table-container">
-            <h2>Feedback Messages</h2>
-            {% if feedback_details %}
+    <!-- Feedback + Views by Department -->
+    <div class="section-row">
+        <div class="table-box">
+            <h2>Latest Feedback (7)</h2>
             <table>
-                <thead><tr><th>Employee</th><th>Feedback</th><th>Time</th></tr></thead>
+                <thead><tr><th>Employee</th><th>Message</th><th>Time</th></tr></thead>
                 <tbody>
-                    {% for f in feedback_details %}
+                    {% for f in feedback_details[:7] %}
                     <tr>
                         <td>{{ f.employee_email }}</td>
                         <td>{{ f.feedback }}</td>
@@ -95,120 +123,149 @@
                     {% endfor %}
                 </tbody>
             </table>
-            {% else %}
-            <div class="no-data">No feedback received</div>
+            {% if feedback_details|length == 0 %}
+            <div class="no-data">No feedback yet</div>
+            {% elif feedback_details|length > 7 %}
+            <div class="text-center mt-3 text-muted small">... and {{ feedback_details|length - 7 }} more</div>
             {% endif %}
         </div>
 
-        <div class="chart-container">
-            <h2>Reactions by Department</h2>
-            <canvas id="departmentChart"></canvas>
-            <div id="noDeptData" class="no-data" style="display:none;">Not enough data</div>
+        <!-- Views by Department -->
+        <div class="chart-box">
+            <h2>Views by Department</h2>
+            <canvas id="viewsDeptChart"></canvas>
+            <div id="noViewsDept" class="no-data" style="display:none;">No views yet</div>
         </div>
     </div>
 </div>
 
-<!-- Snow Animation -->
 <div class="snow-container" id="snowContainer"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // THIS IS THE ONLY CORRECT WAY WHEN PASSING PYTHON LIST
-    const reactionDetails = '{{ reaction_details|tojson }}';
-
+    const reactions = JSON.parse('{{ reaction_details|tojson|safe }}');
+    const views = JSON.parse('{{ views_details|tojson|safe }}');  // ← ADD: Parse views data
     const emojiMap = { 
-        'like': 'thumbs up', 
-        'unlike': 'thumbs down', 
-        'heart': 'red heart', 
-        'cry': 'crying face' 
+        'like': '👍',
+        'unlike': '👎',
+        'heart': '❤️',
+        'cry': '😢' 
     };
 
-    document.addEventListener("DOMContentLoaded", function () {
-        console.log("Reactions loaded:", reactionDetails); // ← Now you will see an ARRAY
+    document.addEventListener('DOMContentLoaded', () => {
+        if (!Array.isArray(reactions) || reactions.length === 0) {
+            document.getElementById('noReactions').style.display = 'block';
+            // Still process views below, even if no reactions
+        }
 
-        // === Reaction Chart ===
-        const reactionCount = {};
-        reactionDetails.forEach(r => {
-            reactionCount[r.reaction] = (reactionCount[r.reaction] || 0) + 1;
+        // FIXED: Correct reaction counting (unchanged)
+        const counts = { like: 0, unlike: 0, heart: 0, cry: 0 };
+        reactions.forEach(r => {
+            if (counts.hasOwnProperty(r.reaction)) {
+                counts[r.reaction]++;
+            }
         });
 
-        if (Object.keys(reactionCount).length > 0) {
-            new Chart(document.getElementById('reactionChart'), {
-                type: 'doughnut',
+        // Latest 5 Reactions (unchanged)
+        const tbody = document.getElementById('recentReactions');
+        document.getElementById('noReactions').style.display = 'none';
+        tbody.innerHTML = '';
+        reactions.slice(0, 5).forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-weight:500;">${r.employee_email}</td>
+                <td class="emoji">${emojiMap[r.reaction]}</td>
+                <td style="color:#666;">${r.timestamp}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // REACTION STATISTICS PIE CHART (unchanged)
+        new Chart(document.getElementById('reactionChart'), {
+            type: 'pie',
+            data: {
+                labels: ['👍', '👎', '❤️', '😢'],
+                datasets: [{
+                    data: [counts.like, counts.unlike, counts.heart, counts.cry],
+                    backgroundColor: ['#4CAF50', '#F44336', '#E91E63', '#9C27B0'],
+                    borderWidth: 3,
+                    borderColor: '#fff'
+                }]
+            },
+            options: { 
+                responsive: true, 
+                plugins: { 
+                    legend: { position: 'bottom', labels: { padding: 20, font: { size: 14 } } },
+                    title: { display: true, text: 'Total Reactions', font: { size: 16 } }
+                } 
+            }
+        });
+
+        // FIXED: VIEWS BY DEPARTMENT - Use 'views' array, not 'reactions'
+        const deptViews = {};
+        const totalViews = views.length;  // ← FIXED: Count actual views
+        views.forEach(v => {  // ← FIXED: Iterate over views, not reactions
+            const match = v.employee_email.match(/\.([a-zA-Z]+)@/i);
+            if (match) {
+                const dept = match[1].toUpperCase();
+                deptViews[dept] = (deptViews[dept] || 0) + 1;
+            }
+        });
+
+        const noViewsDiv = document.getElementById('noViewsDept');
+        if (Object.keys(deptViews).length === 0 || totalViews === 0) {
+            noViewsDiv.style.display = 'block';
+        } else {
+            noViewsDiv.style.display = 'none';
+            new Chart(document.getElementById('viewsDeptChart'), {
+                type: 'pie',
                 data: {
-                    labels: Object.keys(reactionCount).map(k => emojiMap[k] || k),
+                    labels: Object.keys(deptViews),
                     datasets: [{
-                        data: Object.values(reactionCount),
-                        backgroundColor: ['#4CAF50', '#F44336', '#E91E63', '#9C27B0'],
+                        data: Object.values(deptViews),
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                            '#9966FF', '#FF9F40', '#FF5252', '#00BCD4',
+                            '#8BC34A', '#FF9800', '#9E9E9E', '#607D8B'
+                        ],
                         borderWidth: 3,
                         borderColor: '#fff'
                     }]
                 },
-                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { padding: 20 } },
+                        title: { 
+                            display: true, 
+                            text: `Total Views: ${totalViews}`, 
+                            font: { size: 16, weight: 'bold' },
+                            color: '#5D3FA3'
+                        }
+                    }
+                }
             });
         }
 
-        // === Department Chart ===
-        const deptCount = {};
-        reactionDetails.forEach(r => {
-            const match = r.employee_email.match(/\.([a-zA-Z]+)@/i);
-            if (match) {
-                const dept = match[1].toUpperCase();
-                deptCount[dept] = (deptCount[dept] || 0) + 1;
-            }
-        });
-
-        if (Object.keys(deptCount).length > 0) {
-            new Chart(document.getElementById('departmentChart'), {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(deptCount),
-                    datasets: [{ data: Object.values(deptCount), backgroundColor: ['#FF6384','#36A2EB','#FFCE56','#4BC0C0','#9966FF'] }]
-                },
-                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
-            });
-        } else {
-            document.getElementById('noDeptData').style.display = 'block';
-        }
-
-        // === Reactions Table ===
-        const tableBody = document.getElementById('reactionTableBody');
-        const noMsg = document.getElementById('noReactions');
-
-        if (reactionDetails.length === 0) {
-            noMsg.style.display = 'block';
-        } else {
-            reactionDetails.forEach(r => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${r.employee_email}</td>
-                    <td>${emojiMap[r.reaction] || r.reaction}</td>
-                    <td>${r.timestamp}</td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-
-        // === Snow Animation ===
-        const top = Object.keys(reactionCount).reduce((a,b) => reactionCount[a] > reactionCount[b] ? a : b, null);
-        if (top && emojiMap[top]) {
+        // Snowfall (unchanged)
+        if (reactions.length > 0) {
+            const top = Object.keys(counts).reduce((a,b) => counts[a] > counts[b] ? a : b);
             const emoji = emojiMap[top];
             const container = document.getElementById('snowContainer');
-            function snow() {
+
+            const snow = () => {
                 const s = document.createElement('div');
                 s.className = 'snow-emoji';
                 s.textContent = emoji;
                 s.style.left = Math.random() * 100 + 'vw';
-                s.style.animationDuration = (Math.random() * 5 + 7) + 's';
-                s.style.fontSize = (Math.random() * 20 + 25) + 'px';
+                s.style.animationDuration = (Math.random() * 6 + 8) + 's';
+                s.style.fontSize = (Math.random() * 20 + 32) + 'px';
                 container.appendChild(s);
-                setTimeout(() => s.remove(), 15000);
-            }
-            for (let i = 0; i < 30; i++) setTimeout(snow, i * 100);
-            setInterval(snow, 400);
+                setTimeout(() => s.remove(), 16000);
+            };
+            for (let i = 0; i < 40; i++) setTimeout(snow, i * 100);
+            setInterval(snow, 500);
         }
     });
 </script>
-
-
 {% endblock %}
