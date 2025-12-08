@@ -563,6 +563,7 @@ def update_status():
         if not employee_id:
             return jsonify({'error': 'Missing employee_id'}), 400
 
+
         # === CLIENT CANNOT CONTROL active_status ANYMORE ===
         update_data = {
             'employee_id': employee_id,
@@ -914,7 +915,7 @@ def send_message_page():
         active_devices_result = execute_query("""
             SELECT employee_id 
             FROM employee_devices 
-            WHERE active_status = 1
+            WHERE status = 1
         """, fetch=True)
 
         active_employee_ids = [
@@ -1176,11 +1177,9 @@ def monitor_devices():
 
 
         # Split devices
-        active_devices = [d for d in processed_devices if d['active_status']]
-        inactive_devices = [d for d in processed_devices if not d['active_status']]
-        logging.info(f"Processed {len(active_devices)} active and {len(inactive_devices)} inactive devices")
-        logging.debug(f"Active devices: {active_devices}")
-        logging.debug(f"Inactive devices: {inactive_devices}")
+        active_devices = [d for d in processed_devices if d['status']]
+        inactive_devices = [d for d in processed_devices if not d['status']]
+      
 
 
         return render_template(
@@ -1852,10 +1851,10 @@ def update_device_status():
         data = request.json
         logging.debug(f"Received update_device_status data: {data}")
         employee_id = data.get('employee_id')
-        active_status = data.get('active_status')
-        
+        active_status = data.get('status')
+       
         if not employee_id or active_status is None:
-            logging.error("Missing required fields in update_device_status: employee_id or active_status")
+            logging.error("Missing required fields in update_device_status: employee_id, active_status, or status")
             return jsonify({"message": "Missing required fields"}), 400
         
         # Step 1: Fetch employee email (required for NOT NULL)
@@ -2004,6 +2003,7 @@ def record_view():
         logging.error(f"Unexpected error recording view: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}"}), 500
     
+
 @app.route('/views/<employee_id>', methods=['GET'])
 def get_employee_views(employee_id):
     try:

@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS employees (
 -- 2. Employee Devices (one-to-one with employee)
 CREATE TABLE IF NOT EXISTS employee_devices (
     employee_id VARCHAR(36) PRIMARY KEY,
-    status ENUM('online','offline') DEFAULT 'offline',
+    status TINYINT(1) DEFAULT 0,
     active_status TINYINT(1) DEFAULT 0,
     hostname VARCHAR(255) DEFAULT 'unknown-host',
     email VARCHAR(255) NOT NULL,

@@ -171,7 +171,7 @@
                     <td><input type="checkbox" data-employee-id="{{ device.employee_id }}"></td>
                     <td><strong>{{ device.email | default('N/A') }}</strong></td>
                     <td>{{ device.hostname | default('N/A') }}</td>
-                    <td><span class="badge bg-warning text-dark">Offline</span></td>
+                    <td><span class="badge bg-warning text-dark">{{ 'Online' if device.status else 'Offline' }}</span></td>
                     <td>{{ device.last_seen | default('Never') }}</td>
                     <td>{{ 'Yes' if device.app_running else 'No' }}</td>
                     <td>{{ device.device_type | default('Unknown') }}</td>
@@ -239,7 +239,7 @@ IP: {{ 'OK' if device.is_ip_valid else 'Failed' }}"></i>
                     <td><input type="checkbox" data-employee-id="{{ device.employee_id }}"></td>
                     <td><strong>{{ device.email | default('N/A') }}</strong></td>
                     <td>{{ device.hostname | default('N/A') }}</td>
-                    <td><span class="badge bg-success">Online</span></td>
+                    <td><span class="badge bg-success">{{ 'Online' if device.status else 'Offline' }}</span></td>
                     <td>{{ device.last_seen | default('Just now') }}</td>
                     <td>{{ 'Yes' if device.app_running else 'No' }}</td>
                     <td>{{ device.device_type | default('Unknown') }}</td>
@@ -346,44 +346,58 @@ IP: {{ 'OK' if device.is_ip_valid else 'Failed' }}"></i>
     }
 
     async function updateDeviceStatus(employeeId, newStatus) {
-        try {
-            const res = await fetch('/update_device_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ employee_id: employeeId, active_status: newStatus })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                alert(`Device ${newStatus ? 'activated' : 'deactivated'} successfully`);
-                location.reload();
-            } else alert(data.message || 'Failed');
-        } catch (e) { alert('Network error'); }
+    try {
+        const res = await fetch('/update_device_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                employee_id: employeeId, 
+                status: newStatus   // ← Now sending 'status', not 'active_status'
+            })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`Device ${newStatus ? 'activated' : 'deactivated'} successfully`);
+            location.reload();
+        } else {
+            alert(data.message || 'Failed to update');
+        }
+    } catch (e) {
+        alert('Network error');
     }
+}
 
-    async function updateBulkStatus(tableType, newStatus) {
-        const checked = document.querySelectorAll(`#${tableType}DeviceTable input[type="checkbox"]:checked`);
-        const updates = Array.from(checked).map(cb => ({
-            employee_id: cb.dataset.employeeId,
-            active_status: newStatus
-        }));
-        if (updates.length === 0) return alert('No devices selected');
 
-        try {
-            const res = await fetch('/update_bulk_device_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updates)
-            });
-            const data = await res.json();
-            if (res.ok) {
-                alert(`Updated ${updates.length} device(s)`);
-                location.reload();
-            } else alert(data.message || 'Failed');
-        } catch (e) { alert('Network error'); }
+  async function updateBulkStatus(tableType, newStatus) {
+    const checked = document.querySelectorAll(`#${tableType}DeviceTable input[type="checkbox"]:checked`);
+    if (checked.length === 0) return alert('No devices selected');
+
+    const updates = Array.from(checked).map(cb => ({
+        employee_id: cb.dataset.employeeId,
+        status: newStatus   // ← Send 'status', not 'active_status'
+    }));
+
+    try {
+        const res = await fetch('/update_bulk_device_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            alert(`Updated ${updates.length} device(s)`);
+            location.reload();
+        } else {
+            alert(data.message || 'Failed');
+        }
+    } catch (e) {
+        alert('Network error');
     }
+}
 
-    document.getElementById('allActiveInactive').addEventListener('click', () => updateBulkStatus('inactive', true));
-    document.getElementById('allDeactiveActive').addEventListener('click', () => updateBulkStatus('active', false));
+// Update button listeners
+document.getElementById('allActiveInactive').addEventListener('click', () => updateBulkStatus('inactive', true));
+document.getElementById('allDeactiveActive').addEventListener('click', () => updateBulkStatus('active', false));
 
     updateTable('inactive');
     updateTable('active');
