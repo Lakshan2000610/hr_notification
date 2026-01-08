@@ -111,6 +111,38 @@ def execute_query(query, params=None, fetch=False, commit=False):
         if conn:
             conn.close()
 
+def init_groups_tables():
+    try:
+        # Create groups table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS `groups` (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """, commit=True)
+        
+        # Create group_emails table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS group_emails (
+                group_id INT NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (group_id, email),
+                FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """, commit=True)
+        logging.info("Group management tables initialized successfully")
+    except Exception as e:
+        logging.error(f"Error initializing group tables: {e}")
+
+# Initialize tables
+try:
+    init_groups_tables()
+except Exception as e:
+    logging.warning(f"Initial table check failed (might be DB connection issue): {e}")
+
 def format_datetime_for_client(dt):
     """
     Convert any datetime (naive or aware) to proper ISO format with Z
@@ -915,7 +947,7 @@ def send_message_page():
         active_devices_result = execute_query("""
             SELECT employee_id 
             FROM employee_devices 
-            WHERE status = 1
+            WHERE active_status = 1
         """, fetch=True)
 
         active_employee_ids = [
@@ -969,10 +1001,24 @@ def send_message_page():
         employees_json = json.dumps(employees_data)
         departments = sorted(departments)
 
+        # FETCH GROUPS
+        groups = execute_query("SELECT * FROM `groups` ORDER BY name ASC", fetch=True).get("data", [])
+        
+        # Mapping for groups: group_id -> list of emails
+        group_members = execute_query("SELECT group_id, email FROM group_emails", fetch=True).get("data", [])
+        group_map = {}
+        for gm in group_members:
+            gid = gm['group_id']
+            if gid not in group_map:
+                group_map[gid] = []
+            group_map[gid].append(gm['email'])
+
         return render_template('send_message.html', 
                              employees_json=employees_json, 
                              active_employees=employees, 
-                             departments=departments)
+                             departments=departments,
+                             groups=groups,
+                             group_map_json=json.dumps(group_map))
 
     except mysql.connector.Error as e:
         logging.error(f"MySQL error in send_message_page: {e}")
@@ -1176,9 +1222,9 @@ def monitor_devices():
             })
 
 
-        # Split devices
-        active_devices = [d for d in processed_devices if d['status']]
-        inactive_devices = [d for d in processed_devices if not d['status']]
+        # Split devices by manual active_status (1 = Activated, 0 = Deactivated)
+        active_devices = [d for d in processed_devices if d['active_status']]
+        inactive_devices = [d for d in processed_devices if not d['active_status']]
       
 
 
@@ -1377,7 +1423,9 @@ def update_bulk_device_status():
         for update in data:
             employee_id = update.get('employee_id')
             
-            active_status = update.get('active_status')
+            # Look for 'status' (consistent with frontend) or 'active_status'
+            active_status = update.get('status') if update.get('status') is not None else update.get('active_status')
+            
             logging.debug(f"Processing update for employee_id: {employee_id}, active_status: {active_status}")
             if not employee_id or active_status is None:
                 logging.error(f"Missing required fields for employee_id: {employee_id}")
@@ -1598,13 +1646,11 @@ def register_device():
         if email:
             device_data_base["email"] = email
         
-        exists = execute_query("SELECT active_status FROM employee_devices WHERE employee_id = %s", (employee_id,), fetch=True).get("data", []) or []
-        if not exists:
-            device_data_base["active_status"] = False
-        
+        # CRITICAL: We only set active_status=0 for NEW devices. 
+        # For existing devices, we MUST NOT touch active_status here as it is managed manually by admin.
         execute_query("""
             INSERT INTO employee_devices (employee_id, ip, device_type, hostname, email, status, last_seen, app_running, active_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
             ON DUPLICATE KEY UPDATE
                 ip = VALUES(ip),
                 device_type = VALUES(device_type),
@@ -1612,18 +1658,17 @@ def register_device():
                 email = VALUES(email),
                 status = VALUES(status),
                 last_seen = VALUES(last_seen),
-                app_running = VALUES(app_running),
-                active_status = VALUES(active_status)
+                app_running = VALUES(app_running)
+                -- active_status is NOT updated here to preserve manual admin settings
         """, (
             employee_id,
-            device_data_base.get("ip"),
-            device_data_base.get("device_type"),
-            device_data_base.get("hostname"),
-            device_data_base.get("email"),
-            device_data_base.get("status"),
-            device_data_base.get("last_seen"),
-            device_data_base.get("app_running"),
-            device_data_base.get("active_status")
+            data.get("ip"),
+            data.get("device_type"),
+            data.get("hostname"),
+            data.get("email"),
+            "online",
+            datetime.now(timezone.utc).isoformat(),
+            True
         ), commit=True)
         logging.info(f"Device registered/updated: {employee_id}, hostname: {hostname}, email: {email}")
         return jsonify({"message": "Device registered"})
@@ -2074,6 +2119,160 @@ def get_content_views(content_id):
         logging.error(f"Unexpected error fetching views for content {content_id}: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}", "views": []}), 500
      
+
+# --- Group Management Routes ---
+
+@app.route('/group_management')
+@login_required
+def group_management():
+    try:
+        # Get groups and count of emails in each
+        query = """
+            SELECT g.id, g.name, g.description, COUNT(ge.email) as email_count
+            FROM `groups` g
+            LEFT JOIN group_emails ge ON g.id = ge.group_id
+            GROUP BY g.id
+        """
+        groups = execute_query(query, fetch=True).get("data", [])
+        return render_template('group_management.html', groups=groups)
+    except Exception as e:
+        logging.error(f"Error in group_management: {e}")
+        return render_template('group_management.html', groups=[], error=str(e))
+
+@app.route('/create_group', methods=['POST'])
+@login_required
+def create_group():
+    try:
+        name = request.form.get('name')
+        description = request.form.get('description')
+        if not name:
+            return redirect(url_for('group_management', error="Group name is required"))
+        
+        execute_query(
+            "INSERT INTO `groups` (name, description) VALUES (%s, %s)",
+            (name, description),
+            commit=True
+        )
+        return redirect(url_for('group_management'))
+    except Exception as e:
+        logging.error(f"Error creating group: {e}")
+        return redirect(url_for('group_management', error=str(e)))
+
+@app.route('/edit_group/<int:group_id>')
+@login_required
+def edit_group(group_id):
+    try:
+        group_res = execute_query("SELECT * FROM `groups` WHERE id = %s", (group_id,), fetch=True).get("data", [])
+        if not group_res:
+            return redirect(url_for('group_management', error="Group not found"))
+        
+        # Get current group members
+        emails = execute_query("SELECT * FROM group_emails WHERE group_id = %s ORDER BY email ASC", (group_id,), fetch=True).get("data", [])
+        
+        # Fetch available emails (active_status = 1) not already in this group
+        available_emails = execute_query("""
+            SELECT DISTINCT email 
+            FROM employee_devices 
+            WHERE active_status = 1 
+            AND email NOT IN (SELECT email FROM group_emails WHERE group_id = %s)
+            AND email IS NOT NULL AND email != ''
+            ORDER BY email ASC
+        """, (group_id,), fetch=True).get("data", [])
+
+        return render_template('edit_group.html', 
+                               group=group_res[0], 
+                               emails=emails, 
+                               available_emails=available_emails)
+    except Exception as e:
+        logging.error(f"Error in edit_group: {e}")
+        return redirect(url_for('group_management', error=str(e)))
+
+@app.route('/add_multiple_emails_to_group', methods=['POST'])
+@login_required
+def add_multiple_emails_to_group():
+    group_id = request.form.get('group_id')
+    emails = request.form.getlist('emails')
+    try:
+        if not group_id or not emails:
+            return redirect(url_for('edit_group', group_id=group_id))
+        
+        for email in emails:
+            # INSERT IGNORE works if we have PK on (group_id, email)
+            execute_query(
+                "INSERT IGNORE INTO group_emails (group_id, email) VALUES (%s, %s)",
+                (group_id, email),
+                commit=True
+            )
+        return redirect(url_for('edit_group', group_id=group_id))
+    except Exception as e:
+        logging.error(f"Error adding multiple emails: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
+
+@app.route('/delete_group/<int:group_id>', methods=['POST'])
+@login_required
+def delete_group(group_id):
+    try:
+        # emails will be deleted by ON DELETE CASCADE if configured
+        execute_query("DELETE FROM `groups` WHERE id = %s", (group_id,), commit=True)
+        return redirect(url_for('group_management'))
+    except Exception as e:
+        logging.error(f"Error deleting group: {e}")
+        return redirect(url_for('group_management', error=str(e)))
+
+@app.route('/search_emails_ajax')
+@login_required
+def search_emails_ajax():
+    q = request.args.get('q', '')
+    if not q:
+        return jsonify([])
+    try:
+        # Search employees by email prefix/contains
+        query = "SELECT email FROM employees WHERE email LIKE %s LIMIT 10"
+        results = execute_query(query, ('%' + q + '%',), fetch=True).get("data", [])
+        return jsonify(results)
+    except Exception as e:
+        logging.error(f"Error searching emails: {e}")
+        return jsonify([])
+
+@app.route('/add_email_to_group', methods=['POST'])
+@login_required
+def add_email_to_group():
+    group_id = request.form.get('group_id')
+    try:
+        email = request.form.get('email')
+        if not group_id or not email:
+            return redirect(url_for('group_management'))
+        
+        # Check if already exists
+        exists = execute_query(
+            "SELECT 1 FROM group_emails WHERE group_id = %s AND email = %s",
+            (group_id, email),
+            fetch=True
+        ).get("data", [])
+        
+        if not exists:
+            execute_query(
+                "INSERT INTO group_emails (group_id, email) VALUES (%s, %s)",
+                (group_id, email),
+                commit=True
+            )
+        return redirect(url_for('edit_group', group_id=group_id))
+    except Exception as e:
+        logging.error(f"Error adding email to group: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
+
+@app.route('/remove_email_from_group', methods=['POST'])
+@login_required
+def remove_email_from_group():
+    group_id = request.form.get('group_id')
+    try:
+        email = request.form.get('email')
+        execute_query("DELETE FROM group_emails WHERE group_id = %s AND email = %s", (group_id, email), commit=True)
+        return redirect(url_for('edit_group', group_id=group_id))
+    except Exception as e:
+        logging.error(f"Error removing email: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
+
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
 

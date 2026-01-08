@@ -3,19 +3,21 @@
 {% block content %}
 
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css"
+    rel="stylesheet" />
 
 <style>
     :root {
-        --primary: #7F5FCF;
+        --primary: #5D3FA3;
+        --secondary: #7F5FCF;
         --light: #B6A3D8;
         --bg: #F5F0FF;
-        --card-shadow: 0 20px 60px rgba(127, 95, 207, 0.18);
+        --card-shadow: 0 20px 60px rgba(93, 63, 163, 0.18);
     }
 
     body {
         background: linear-gradient(135deg, #F5F0FF 0%, #E8E0FF 100%);
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-family: 'Outfit', sans-serif;
         min-height: 100vh;
     }
 
@@ -30,12 +32,15 @@
         position: relative;
         overflow: hidden;
     }
+
     .page-container::before {
         content: '';
         position: absolute;
-        top: 0; left: 0; right: 0;
+        top: 0;
+        left: 0;
+        right: 0;
         height: 8px;
-        background: linear-gradient(90deg, #7F5FCF, #B6A3D8, #7F5FCF);
+        background: linear-gradient(90deg, #5D3FA3, #7F5FCF, #B6A3D8);
         border-radius: 28px 28px 0 0;
     }
 
@@ -45,29 +50,31 @@
         font-weight: 800;
         font-size: 2.6em;
         margin-bottom: 40px;
-        background: linear-gradient(90deg, #7F5FCF, #9D7BE1);
+        background: linear-gradient(90deg, #5D3FA3, #7F5FCF);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
 
     .section-title {
-        color: #7F5FCF;
+        color: #5D3FA3;
         font-weight: 700;
         font-size: 1.4em;
         margin: 40px 0 20px;
         position: relative;
         padding-bottom: 12px;
     }
+
     .section-title::after {
         content: '';
         position: absolute;
-        left: 0; bottom: 0;
+        left: 0;
+        bottom: 0;
         width: 90px;
         height: 5px;
-        background: linear-gradient(90deg, #7F5FCF, #B6A3D8);
+        background: linear-gradient(90deg, #5D3FA3, #7F5FCF);
         border-radius: 3px;
-        box-shadow: 0 4px 10px rgba(127, 95, 207, 0.3);
+        box-shadow: 0 4px 10px rgba(93, 63, 163, 0.3);
     }
 
     .form-label {
@@ -77,18 +84,23 @@
         margin-bottom: 10px;
     }
 
-    .form-control, select.form-control {
-        border: 2px solid #e7dcff;
-        border-radius: 16px;
-        padding: 14px 18px;
-        font-size: 1rem;
-        transition: all 0.3s ease;
-        background: #fdfbff;
+    .form-control,
+    select.form-control,
+    .select2-container--bootstrap-5 .select2-selection {
+        border: 2px solid #e7dcff !important;
+        border-radius: 16px !important;
+        padding: 12px 18px !important;
+        font-size: 1rem !important;
+        transition: all 0.3s ease !important;
+        background: #fdfbff !important;
     }
-    .form-control:focus, select.form-control:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 0.25rem rgba(127, 95, 207, 0.2);
-        background: white;
+
+    .form-control:focus,
+    select.form-control:focus,
+    .select2-container--bootstrap-5.select2-container--focus .select2-selection {
+        border-color: var(--primary) !important;
+        box-shadow: 0 0 0 0.25rem rgba(93, 63, 163, 0.2) !important;
+        background: white !important;
         transform: translateY(-2px);
     }
 
@@ -105,10 +117,12 @@
         margin-top: 0.3em;
         border: 2px solid #B6A3D8;
     }
+
     .form-check-input:checked {
         background-color: var(--primary);
         border-color: var(--primary);
     }
+
     .form-check-label {
         color: #444;
         font-weight: 500;
@@ -117,20 +131,22 @@
     }
 
     .btn-primary {
-        background: linear-gradient(135deg, #7F5FCF, #9D7BE1);
+        background: linear-gradient(135deg, #5D3FA3, #7F5FCF);
         border: none;
         border-radius: 18px;
         padding: 16px 32px;
         font-size: 1.25em;
         font-weight: 700;
         margin-top: 20px;
-        box-shadow: 0 10px 25px rgba(127, 95, 207, 0.35);
+        box-shadow: 0 10px 25px rgba(93, 63, 163, 0.35);
         transition: all 0.4s ease;
     }
+
     .btn-primary:hover {
         transform: translateY(-5px);
-        box-shadow: 0 18px 35px rgba(127, 95, 207, 0.45);
-        background: linear-gradient(135deg, #6B4BB8, #8B66D4);
+        box-shadow: 0 18px 35px rgba(93, 63, 163, 0.45);
+        background: linear-gradient(135deg, #4A3282, #6B4BB8);
+        color: white;
     }
 
     .btn-link {
@@ -139,62 +155,100 @@
         text-decoration: none;
         font-size: 1.05em;
     }
+
     .btn-link:hover {
-        color: #5D3FA3;
+        color: #4A3282;
         text-decoration: underline;
     }
 
     .popup-overlay {
         display: none;
         position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(127, 95, 207, 0.5);
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(93, 63, 163, 0.5);
         backdrop-filter: blur(10px);
         z-index: 9999;
         justify-content: center;
         align-items: center;
     }
+
     .popup-content {
         background: white;
         padding: 40px;
         border-radius: 24px;
-        width: 380px;
+        width: 420px;
         text-align: center;
         font-weight: bold;
         font-size: 1.2em;
-        box-shadow: 0 25px 60px rgba(127, 95, 207, 0.4);
+        box-shadow: 0 25px 60px rgba(93, 63, 163, 0.4);
         border: 4px solid #B6A3D8;
         animation: popupBounce 0.6s ease-out;
     }
+
     @keyframes popupBounce {
-        0% { transform: scale(0.8); opacity: 0; }
-        70% { transform: scale(1.05); }
-        100% { transform: scale(1); }
+        0% {
+            transform: scale(0.8);
+            opacity: 0;
+        }
+
+        70% {
+            transform: scale(1.05);
+        }
+
+        100% {
+            transform: scale(1);
+        }
     }
+
     .popup-content.success {
         background: linear-gradient(135deg, #f0e6ff, #e6f7ff);
         color: #5D3FA3;
-        border-color: #7F5FCF;
+        border-color: #5D3FA3;
     }
+
     .popup-content.error {
         background: #fff0f0;
         color: #a0333b;
         border-color: #f5c6cb;
     }
+
     .spinner {
         border: 6px solid #e7dcff;
         border-top: 6px solid var(--primary);
         border-radius: 50%;
-        width: 60px; height: 60px;
+        width: 60px;
+        height: 60px;
         animation: spin 1s linear infinite;
         margin: 0 auto 20px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Fix Select2 Height */
+    .select2-container--bootstrap-5 .select2-selection--multiple {
+        min-height: 54px !important;
+    }
 
     @media (max-width: 768px) {
-        .page-container { margin: 20px; padding: 30px; }
-        h1 { font-size: 2.2em; }
-        .section-title { font-size: 1.3em; }
+        .page-container {
+            margin: 20px;
+            padding: 30px;
+        }
+
+        h1 {
+            font-size: 2.2em;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+        }
     }
 </style>
 
@@ -202,18 +256,20 @@
     <h1>Send Message</h1>
 
     {% if error %}
-        <div class="alert alert-danger rounded-pill text-center">{{ error }}</div>
+    <div class="alert alert-danger rounded-pill text-center">{{ error }}</div>
     {% endif %}
 
     <form id="messageForm" enctype="multipart/form-data">
         <div class="mb-4">
             <label for="title" class="form-label">Message Title (max 100 characters)</label>
-            <input type="text" class="form-control" id="title" name="title" maxlength="100" required placeholder="Enter a clear title...">
+            <input type="text" class="form-control" id="title" name="title" maxlength="100" required
+                placeholder="Enter a clear title...">
         </div>
 
         <div class="mb-4">
             <label for="text" class="form-label">Message Text</label>
-            <textarea class="form-control" id="text" name="text" rows="6" required placeholder="Write your message here..."></textarea>
+            <textarea class="form-control" id="text" name="text" rows="6" required
+                placeholder="Write your message here..."></textarea>
         </div>
 
         <div class="section-title">Upload Image (Optional)</div>
@@ -231,7 +287,7 @@
         <div class="section-title">Schedule Options</div>
         <div class="mb-4">
             <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="send_now" name="send_now">
+                <input class="form-check-input" type="checkbox" id="send_now" name="send_now" checked>
                 <label class="form-check-label" for="send_now">Send Immediately</label>
             </div>
             <div class="form-check mt-3">
@@ -243,7 +299,6 @@
             </div>
         </div>
 
-        <!-- MULTIPLE GROUP SELECTION -->
         <div class="section-title">Who should receive this message?</div>
         <div class="mb-4">
             <div class="form-check">
@@ -252,35 +307,36 @@
             </div>
 
             <div class="form-check mt-3">
-                <input class="form-check-input" type="radio" name="target_type" id="send_departments" value="departments">
-                <label class="form-check-label" for="send_departments">Send to Selected Departments (Multiple)</label>
+                <input class="form-check-input" type="radio" name="target_type" id="send_groups" value="groups">
+                <label class="form-check-label" for="send_groups">Send to Selected Groups (Multiple)</label>
             </div>
-            <div id="departments_container" class="mt-3" style="display: none;">
-                <select id="departments_select" multiple="multiple" class="form-control">
-                    {% for dept in departments %}
-                        <option value="{{ dept }}">{{ dept | capitalize }}</option>
+            <div id="groups_container" class="mt-3" style="display: none;">
+                <select id="groups_select" multiple="multiple" class="form-control">
+                    {% for grp in groups %}
+                    <option value="{{ grp.id }}">{{ grp.name }}</option>
                     {% endfor %}
                 </select>
-                <small class="text-muted">Hold Ctrl/Cmd to select multiple departments</small>
+                <small class="text-muted">Search and select group names</small>
             </div>
 
             <div class="form-check mt-3">
-                <input class="form-check-input" type="radio" name="target_type" id="send_individuals" value="individuals">
+                <input class="form-check-input" type="radio" name="target_type" id="send_individuals"
+                    value="individuals">
                 <label class="form-check-label" for="send_individuals">Send to Selected Employees (Multiple)</label>
             </div>
             <div id="individuals_container" class="mt-3" style="display: none;">
                 <select id="individuals_select" multiple="multiple" class="form-control">
                     {% for emp in active_employees %}
-                        <option value="{{ emp.id }}">{{ emp.email }}</option>
+                    <option value="{{ emp.id }}">{{ emp.email }}</option>
                     {% endfor %}
                 </select>
-                <small class="text-muted">Hold Ctrl/Cmd to select multiple • Type to search</small>
+                <small class="text-muted">Search and select individual employees</small>
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary w-100">Send Message Now</button>
-        <div class="note mt-4 text-center">You can attach both an image and a video</div>
+        <button type="submit" class="btn btn-primary w-100">Send Notification</button>
     </form>
+    <div class="note mt-4 text-center">You can attach both an image and a video</div>
 
     <div class="text-center mt-5">
         <a href="{{ url_for('home') }}" class="btn btn-link">Back to Dashboard</a>
@@ -300,108 +356,120 @@
 
 <script>
     const employees = JSON.parse('{{ employees_json | safe }}');
+    const groupMap = JSON.parse('{{ group_map_json | safe }}');
 
-    $(document).ready(function() {
-        // Initialize Select2 for both dropdowns
-        $('#departments_select').select2({
+    $(document).ready(function () {
+        // Initialize Select2
+        const s2Options = {
             theme: 'bootstrap-5',
-            placeholder: "Select departments...",
             width: '100%'
-        });
+        };
 
-        $('#individuals_select').select2({
-            theme: 'bootstrap-5',
-            placeholder: "Search and select employees...",
-            width: '100%'
-        });
+        $('#groups_select').select2({ ...s2Options, placeholder: "Select groups..." });
+        $('#individuals_select').select2({ ...s2Options, placeholder: "Search employees..." });
 
         // Radio button logic
         document.querySelectorAll('input[name="target_type"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                document.getElementById('departments_container').style.display = 'none';
-                document.getElementById('individuals_container').style.display = 'none';
-
-                if (this.value === 'departments') {
-                    document.getElementById('departments_container').style.display = 'block';
-                } else if (this.value === 'individuals') {
-                    document.getElementById('individuals_container').style.display = 'block';
-                }
+            radio.addEventListener('change', function () {
+                document.getElementById('groups_container').style.display = (this.value === 'groups') ? 'block' : 'none';
+                document.getElementById('individuals_container').style.display = (this.value === 'individuals') ? 'block' : 'none';
             });
         });
 
         // Schedule logic
-        document.getElementById('send_now').addEventListener('change', function() {
-            if (this.checked) {
-                document.getElementById('scheduled_time_check').checked = false;
-                document.getElementById('scheduled_time_div').style.display = 'none';
-                document.getElementById('scheduled_time').removeAttribute('required');
+        const sendNow = document.getElementById('send_now');
+        const schedCheck = document.getElementById('scheduled_time_check');
+        const schedDiv = document.getElementById('scheduled_time_div');
+        const schedInput = document.getElementById('scheduled_time');
+
+        sendNow.addEventListener('change', () => {
+            if (sendNow.checked) {
+                schedCheck.checked = false;
+                schedDiv.style.display = 'none';
+                schedInput.removeAttribute('required');
             }
         });
 
-        document.getElementById('scheduled_time_check').addEventListener('change', function() {
-            if (this.checked) {
-                document.getElementById('send_now').checked = false;
-                document.getElementById('scheduled_time_div').style.display = 'block';
-                document.getElementById('scheduled_time').setAttribute('required', 'required');
+        schedCheck.addEventListener('change', () => {
+            if (schedCheck.checked) {
+                sendNow.checked = false;
+                schedDiv.style.display = 'block';
+                schedInput.setAttribute('required', 'required');
             } else {
-                document.getElementById('scheduled_time_div').style.display = 'none';
-                document.getElementById('scheduled_time').removeAttribute('required');
+                schedDiv.style.display = 'none';
+                schedInput.removeAttribute('required');
             }
         });
 
         // Form Submit
-        document.getElementById('messageForm').addEventListener('submit', async function(e) {
+        document.getElementById('messageForm').addEventListener('submit', async function (e) {
             e.preventDefault();
             const formData = new FormData(this);
-
-            let employeeIds = [];
+            let targetEmployeeIds = new Set();
             const targetType = document.querySelector('input[name="target_type"]:checked').value;
 
             if (targetType === 'all') {
-                employeeIds = employees.map(e => e.id);
-            } else if (targetType === 'departments') {
-                const selectedDepts = $('#departments_select').val() || [];
-                if (selectedDepts.length === 0) {
-                    alert('Please select at least one department');
+                employees.forEach(e => targetEmployeeIds.add(e.id));
+            }
+            else if (targetType === 'groups') {
+                const selectedGroups = $('#groups_select').val() || [];
+                if (selectedGroups.length === 0) {
+                    alert('Please select at least one group');
                     return;
                 }
-                employeeIds = employees
-                    .filter(e => selectedDepts.includes(e.department))
-                    .map(e => e.id);
-            } else if (targetType === 'individuals') {
+                selectedGroups.forEach(gid => {
+                    const emailsInGroup = groupMap[gid] || [];
+                    employees.forEach(emp => {
+                        if (emailsInGroup.includes(emp.email)) {
+                            targetEmployeeIds.add(emp.id);
+                        }
+                    });
+                });
+            }
+            else if (targetType === 'individuals') {
                 const selected = $('#individuals_select').val() || [];
                 if (selected.length === 0) {
                     alert('Please select at least one employee');
                     return;
                 }
-                employeeIds = selected;
+                selected.forEach(id => targetEmployeeIds.add(id));
             }
 
-            if (employeeIds.length === 0) {
-                alert('No recipients selected');
+            if (targetEmployeeIds.size === 0) {
+                alert('No valid recipients found for your selection. Note: Recipients must have an active device.');
                 return;
             }
 
-            employeeIds.forEach(id => formData.append('employees', id));
-            if (document.getElementById('send_now').checked) {
+            // Add unique employee IDs to form data
+            Array.from(targetEmployeeIds).forEach(id => formData.append('employees', id));
+
+            if (sendNow.checked) {
                 formData.delete('scheduled_time');
             }
 
-            document.getElementById('popupContent').innerHTML = '<div class="spinner"></div><div>Sending message...</div>';
-            document.getElementById('popupOverlay').style.display = 'flex';
+            const popupOverlay = document.getElementById('popupOverlay');
+            const popupContent = document.getElementById('popupContent');
+
+            popupContent.innerHTML = '<div class="spinner"></div><div>Preparing and sending message...</div>';
+            popupContent.className = 'popup-content';
+            popupOverlay.style.display = 'flex';
 
             try {
                 const response = await fetch('/send_message', { method: 'POST', body: formData });
                 const result = await response.json();
-                document.getElementById('popupContent').textContent = result.message || (response.ok ? 'Message Sent Successfully!' : 'Failed to Send');
-                document.getElementById('popupContent').classList.add(response.ok ? 'success' : 'error');
+
+                popupContent.innerHTML = `<div>${result.message || (response.ok ? 'Success!' : 'Error')}</div>`;
+                popupContent.classList.add(response.ok ? 'success' : 'error');
+
                 setTimeout(() => {
-                    document.getElementById('popupOverlay').style.display = 'none';
-                    if (response.ok) window.location.href = '/';
+                    popupOverlay.style.display = 'none';
+                    if (response.ok) window.location.href = '/home';
                 }, 2500);
             } catch (err) {
-                document.getElementById('popupContent').textContent = 'Network Error';
-                document.getElementById('popupContent').classList.add('error');
+                console.error(err);
+                popupContent.innerHTML = '<div>Network Error. Please try again.</div>';
+                popupContent.classList.add('error');
+                setTimeout(() => popupOverlay.style.display = 'none', 3000);
             }
         });
     });

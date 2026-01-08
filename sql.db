@@ -120,6 +120,23 @@ CREATE TABLE IF NOT EXISTS device_update_status (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 10. Groups
+CREATE TABLE IF NOT EXISTS `groups` (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 11. Group Emails
+CREATE TABLE IF NOT EXISTS group_emails (
+    group_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, email),
+    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- =============================================
 -- DONE! All tables created.
 -- Now your Flask app with MySQL will work perfectly.
