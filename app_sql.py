@@ -14,7 +14,6 @@ import tempfile
 import urllib.parse
 import logging
 import requests
-import pkg_resources
 from functools import wraps
 import json
 from dateutil import parser
@@ -608,8 +607,7 @@ def update_status():
             'last_seen': datetime.now(timezone.utc).isoformat(),
         }
 
-        # Remove None values (safe because active_status not included)
-        update_data = {k: v for k, v in update_data.items() if v is not None}
+        # Keep all keys even if None, so pyformat named placeholders don't fail
 
         # CRITICAL: DO NOT TOUCH active_status in this route!
         execute_query("""
@@ -643,7 +641,7 @@ def update_status():
                 'last_attempted_at': datetime.now(timezone.utc).isoformat(),
                 'error_message': data.get('error_message') if data.get('update_status') == 'failed' else None
             }
-            update_status_data = {k: v for k, v in update_status_data.items() if v is not None}
+            # Keep all keys even if None, so pyformat named placeholders don't fail
 
             execute_query("""
                 INSERT INTO device_update_status 
