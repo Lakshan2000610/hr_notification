@@ -609,6 +609,19 @@ def update_status():
 
         # Keep all keys even if None, so pyformat named placeholders don't fail
 
+        # Ensure employee exists in employees table before updating device
+        # This prevents Foreign Key (1452) errors if the DB was reset
+        email = data.get('email')
+        if email:
+            try:
+                execute_query(
+                    "INSERT IGNORE INTO employees (id, email) VALUES (%s, %s)",
+                    (employee_id, email),
+                    commit=True
+                )
+            except Exception as e:
+                logging.warning(f"Could not auto-create employee in update_status: {e}")
+
         # CRITICAL: DO NOT TOUCH active_status in this route!
         execute_query("""
             INSERT INTO employee_devices 
