@@ -596,9 +596,12 @@ def update_status():
 
 
         # === CLIENT CANNOT CONTROL active_status ANYMORE ===
+        # Fix: Convert status string to integer for MySQL (online=1, offline=0)
+        status_val = 1 if data.get('status') == 'online' else 0
+
         update_data = {
             'employee_id': employee_id,
-            'status': data.get('status', 'offline'),
+            'status': status_val,
             'app_running': data.get('app_running', False),
             'ip': data.get('ip'),
             'device_type': data.get('device_type'),
@@ -1664,7 +1667,7 @@ def register_device():
             data.get("device_type"),
             data.get("hostname"),
             data.get("email"),
-            "online",
+            1, # status: 1 = online
             datetime.now(timezone.utc).isoformat(),
             True
         ), commit=True)
