@@ -30,8 +30,8 @@ app.secret_key = os.getenv('SECRET_KEY', 'super_secret_key')  # Load from .env o
 
 # MySQL configuration (add to your .env)
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_USER = os.getenv("MYSQL_USER", "hr_app")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Acorn2025!")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "hr_notification")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 
