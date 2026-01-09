@@ -30,8 +30,8 @@ app.secret_key = os.getenv('SECRET_KEY', 'super_secret_key')  # Load from .env o
 
 # MySQL configuration (add to your .env)
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-MYSQL_USER = os.getenv("MYSQL_USER", "hr_app")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "hr_app")
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "hr_notification")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 
@@ -166,7 +166,10 @@ CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID")
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
-UPLOAD_DIR = "hr_notification\\uploads"
+# Local directory for uploads
+# Use absolute path based on current file location to work on both local Windows and Linux server
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
@@ -609,18 +612,26 @@ def update_status():
 
         # Keep all keys even if None, so pyformat named placeholders don't fail
 
-        # Ensure employee exists in employees table before updating device
-        # This prevents Foreign Key (1452) errors if the DB was reset
+        # Ensure employee exists/resolve correct ID to prevent FK errors (1452)
         email = data.get('email')
         if email:
-            try:
-                execute_query(
-                    "INSERT IGNORE INTO employees (id, email) VALUES (%s, %s)",
-                    (employee_id, email),
-                    commit=True
-                )
-            except Exception as e:
-                logging.warning(f"Could not auto-create employee in update_status: {e}")
+            # Check if email already exists
+            existing_emp = execute_query("SELECT id FROM employees WHERE email = %s", (email,), fetch=True)
+            if existing_emp.get("data"):
+                # Use the EXISTING ID from database, overriding the client's one
+                # This fixes the case where Client ID != Server ID for same email
+                employee_id = existing_emp["data"][0]['id']
+                update_data['employee_id'] = employee_id  # Update the dict too
+            else:
+                # New email, ensure ID exists
+                try:
+                    execute_query(
+                        "INSERT IGNORE INTO employees (id, email) VALUES (%s, %s)",
+                        (employee_id, email),
+                        commit=True
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not auto-create employee: {e}")
 
         # CRITICAL: DO NOT TOUCH active_status in this route!
         execute_query("""
