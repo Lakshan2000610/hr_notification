@@ -122,16 +122,34 @@ def init_groups_tables():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """, commit=True)
         
-        # Create group_emails table
+        # Create group_members table (NEW)
         execute_query("""
-            CREATE TABLE IF NOT EXISTS group_emails (
+            CREATE TABLE IF NOT EXISTS group_members (
                 group_id INT NOT NULL,
-                email VARCHAR(255) NOT NULL,
+                employee_id VARCHAR(255) NOT NULL,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (group_id, email),
-                FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE
+                PRIMARY KEY (group_id, employee_id),
+                FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """, commit=True)
+
+        # Migrate data from group_emails to group_members if group_emails exists
+        try:
+            # Check if group_emails exists
+            check_table = execute_query("SHOW TABLES LIKE 'group_emails'", fetch=True).get("data", [])
+            if check_table:
+                logging.info("Migrating data from group_emails to group_members...")
+                execute_query("""
+                    INSERT IGNORE INTO group_members (group_id, employee_id, added_at)
+                    SELECT ge.group_id, e.id, ge.added_at
+                    FROM group_emails ge
+                    JOIN employees e ON ge.email = e.email
+                """, commit=True)
+                logging.info("Migration completed successfully.")
+        except Exception as migration_error:
+            logging.warning(f"Data migration failed or group_emails table not found: {migration_error}")
+
         logging.info("Group management tables initialized successfully")
     except Exception as e:
         logging.error(f"Error initializing group tables: {e}")
@@ -1023,17 +1041,18 @@ def send_message_page():
         employees_json = json.dumps(employees_data)
         departments = sorted(departments)
 
-        # FETCH GROUPS
-        groups = execute_query("SELECT * FROM `groups` ORDER BY name ASC", fetch=True).get("data", [])
-        
-        # Mapping for groups: group_id -> list of emails
-        group_members = execute_query("SELECT group_id, email FROM group_emails", fetch=True).get("data", [])
+        # Fetch groups
+        groups_result = execute_query("SELECT id, name FROM `groups` ORDER BY name ASC", fetch=True)
+        groups = groups_result.get("data", [])
+
+        # Mapping for groups: group_id -> list of employee_ids
+        group_members = execute_query("SELECT group_id, employee_id FROM group_members", fetch=True).get("data", [])
         group_map = {}
         for gm in group_members:
             gid = gm['group_id']
             if gid not in group_map:
                 group_map[gid] = []
-            group_map[gid].append(gm['email'])
+            group_map[gid].append(gm['employee_id'])
 
         return render_template('send_message.html', 
                              employees_json=employees_json, 
@@ -2148,11 +2167,11 @@ def get_content_views(content_id):
 @login_required
 def group_management():
     try:
-        # Get groups and count of emails in each
+        # Get groups and count of members in each
         query = """
-            SELECT g.id, g.name, g.description, COUNT(ge.email) as email_count
+            SELECT g.id, g.name, g.description, COUNT(gm.employee_id) as member_count
             FROM `groups` g
-            LEFT JOIN group_emails ge ON g.id = ge.group_id
+            LEFT JOIN group_members gm ON g.id = gm.group_id
             GROUP BY g.id
         """
         groups = execute_query(query, fetch=True).get("data", [])
@@ -2188,46 +2207,51 @@ def edit_group(group_id):
         if not group_res:
             return redirect(url_for('group_management', error="Group not found"))
         
-        # Get current group members
-        emails = execute_query("SELECT * FROM group_emails WHERE group_id = %s ORDER BY email ASC", (group_id,), fetch=True).get("data", [])
+        # Get current group members with emails for display
+        members = execute_query("""
+            SELECT gm.*, e.email 
+            FROM group_members gm
+            JOIN employees e ON gm.employee_id = e.id
+            WHERE gm.group_id = %s 
+            ORDER BY e.email ASC
+        """, (group_id,), fetch=True).get("data", [])
         
-        # Fetch available emails (active_status = 1) not already in this group
-        available_emails = execute_query("""
-            SELECT DISTINCT email 
-            FROM employee_devices 
-            WHERE active_status = 1 
-            AND email NOT IN (SELECT email FROM group_emails WHERE group_id = %s)
-            AND email IS NOT NULL AND email != ''
-            ORDER BY email ASC
+        # Fetch available employees (active_status = 1) not already in this group
+        available_employees = execute_query("""
+            SELECT DISTINCT e.id, e.email 
+            FROM employees e
+            JOIN employee_devices ed ON e.id = ed.employee_id
+            WHERE ed.active_status = 1 
+            AND e.id NOT IN (SELECT employee_id FROM group_members WHERE group_id = %s)
+            ORDER BY e.email ASC
         """, (group_id,), fetch=True).get("data", [])
 
         return render_template('edit_group.html', 
                                group=group_res[0], 
-                               emails=emails, 
-                               available_emails=available_emails)
+                               members=members, 
+                               available_employees=available_employees)
     except Exception as e:
         logging.error(f"Error in edit_group: {e}")
         return redirect(url_for('group_management', error=str(e)))
 
-@app.route('/add_multiple_emails_to_group', methods=['POST'])
+@app.route('/add_multiple_members_to_group', methods=['POST'])
 @login_required
-def add_multiple_emails_to_group():
+def add_multiple_members_to_group():
     group_id = request.form.get('group_id')
-    emails = request.form.getlist('emails')
+    employee_ids = request.form.getlist('employee_ids')
     try:
-        if not group_id or not emails:
+        if not group_id or not employee_ids:
             return redirect(url_for('edit_group', group_id=group_id))
         
-        for email in emails:
-            # INSERT IGNORE works if we have PK on (group_id, email)
+        for emp_id in employee_ids:
             execute_query(
-                "INSERT IGNORE INTO group_emails (group_id, email) VALUES (%s, %s)",
-                (group_id, email),
+                "INSERT IGNORE INTO group_members (group_id, employee_id) VALUES (%s, %s)",
+                (group_id, emp_id),
                 commit=True
             )
         return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error adding multiple emails: {e}")
+        logging.error(f"Error adding multiple members: {e}")
         return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
 @app.route('/delete_group/<int:group_id>', methods=['POST'])
@@ -2256,45 +2280,44 @@ def search_emails_ajax():
         logging.error(f"Error searching emails: {e}")
         return jsonify([])
 
-@app.route('/add_email_to_group', methods=['POST'])
+@app.route('/add_member_to_group', methods=['POST'])
 @login_required
-def add_email_to_group():
+def add_member_to_group():
     group_id = request.form.get('group_id')
+    employee_id = request.form.get('employee_id')
     try:
-        email = request.form.get('email')
-        if not group_id or not email:
+        if not group_id or not employee_id:
             return redirect(url_for('group_management'))
         
         # Check if already exists
         exists = execute_query(
-            "SELECT 1 FROM group_emails WHERE group_id = %s AND email = %s",
-            (group_id, email),
+            "SELECT 1 FROM group_members WHERE group_id = %s AND employee_id = %s",
+            (group_id, employee_id),
             fetch=True
         ).get("data", [])
         
         if not exists:
             execute_query(
-                "INSERT INTO group_emails (group_id, email) VALUES (%s, %s)",
-                (group_id, email),
+                "INSERT INTO group_members (group_id, employee_id) VALUES (%s, %s)",
+                (group_id, employee_id),
                 commit=True
             )
         return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error adding email to group: {e}")
+        logging.error(f"Error adding member to group: {e}")
         return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
-@app.route('/remove_email_from_group', methods=['POST'])
+@app.route('/remove_member_from_group', methods=['POST'])
 @login_required
-def remove_email_from_group():
+def remove_member_from_group():
     group_id = request.form.get('group_id')
+    employee_id = request.form.get('employee_id')
     try:
-        email = request.form.get('email')
-        execute_query("DELETE FROM group_emails WHERE group_id = %s AND email = %s", (group_id, email), commit=True)
+        execute_query("DELETE FROM group_members WHERE group_id = %s AND employee_id = %s", (group_id, employee_id), commit=True)
         return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error removing email: {e}")
+        logging.error(f"Error removing member: {e}")
         return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
-

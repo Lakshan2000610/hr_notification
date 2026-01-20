@@ -30,7 +30,7 @@
 <!-- Group Members Table (Now at the Top) -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-dark text-white">
-        <h5 class="mb-0">Group Members ({{ emails|length }})</h5>
+        <h5 class="mb-0">Group Members ({{ members|length }})</h5>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -43,16 +43,16 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for email in emails %}
+                    {% for member in members %}
                     <tr>
-                        <td><strong>{{ email.email }}</strong></td>
-                        <td>{{ email.added_at.strftime('%Y-%m-%d %H:%M') if email.added_at else '—' }}</td>
+                        <td><strong>{{ member.email }}</strong></td>
+                        <td>{{ member.added_at.strftime('%Y-%m-%d %H:%M') if member.added_at else '—' }}</td>
                         <td class="text-center">
-                            <form action="{{ url_for('remove_email_from_group') }}" method="POST" class="d-inline">
+                            <form action="{{ url_for('remove_member_from_group') }}" method="POST" class="d-inline">
                                 <input type="hidden" name="group_id" value="{{ group.id }}">
-                                <input type="hidden" name="email" value="{{ email.email }}">
+                                <input type="hidden" name="employee_id" value="{{ member.employee_id }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger"
-                                    onclick="return confirm('Remove this email from the group?')">
+                                    onclick="return confirm('Remove this member from the group?')">
                                     <i class="bi bi-x-circle"></i> Remove
                                 </button>
                             </form>
@@ -69,23 +69,23 @@
     </div>
 </div>
 
-<!-- Add Emails to Group section (Now at the Bottom) -->
+<!-- Add Members to Group section (Now at the Bottom) -->
 <div class="card shadow-sm">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Add Active Emails to Group</h5>
+        <h5 class="mb-0">Add Active Members to Group</h5>
         <div style="min-width: 250px;">
             <div class="input-group input-group-sm">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
-                <input type="text" id="availableEmailSearch" class="form-control"
-                    placeholder="Search available emails...">
+                <input type="text" id="availableMemberSearch" class="form-control"
+                    placeholder="Search available members...">
             </div>
         </div>
     </div>
     <div class="card-body">
-        <form action="{{ url_for('add_multiple_emails_to_group') }}" method="POST" id="addMultiForm">
+        <form action="{{ url_for('add_multiple_members_to_group') }}" method="POST" id="addMultiForm">
             <input type="hidden" name="group_id" value="{{ group.id }}">
             <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                <table class="table table-sm table-hover" id="availableEmailsTable">
+                <table class="table table-sm table-hover" id="availableMembersTable">
                     <thead class="sticky-top bg-light">
                         <tr>
                             <th width="40"><input type="checkbox" class="form-check-input" id="selectAll"></th>
@@ -93,13 +93,13 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in available_emails %}
-                        <tr class="email-row">
+                        {% for item in available_employees %}
+                        <tr class="member-row">
                             <td>
-                                <input type="checkbox" name="emails" value="{{ item.email }}"
-                                    class="form-check-input email-checkbox">
+                                <input type="checkbox" name="employee_ids" value="{{ item.id }}"
+                                    class="form-check-input member-checkbox">
                             </td>
-                            <td class="email-text">{{ item.email }}</td>
+                            <td class="member-text">{{ item.email }}</td>
                         </tr>
                         {% else %}
                         <tr>
@@ -111,9 +111,9 @@
                 </table>
             </div>
             <div class="mt-3 d-flex justify-content-between align-items-center">
-                <div id="selectedCount" class="text-muted small">0 emails selected</div>
+                <div id="selectedCount" class="text-muted small">0 member(s) selected</div>
                 <button type="submit" class="btn btn-success" id="addSelectedBtn" disabled>
-                    <i class="bi bi-person-plus-fill"></i> Add Selected Emails
+                    <i class="bi bi-person-plus-fill"></i> Add Selected Members
                 </button>
             </div>
         </form>
@@ -122,11 +122,11 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const searchInput = document.getElementById('availableEmailSearch');
-        const table = document.getElementById('availableEmailsTable');
-        const rows = table.querySelectorAll('.email-row');
+        const searchInput = document.getElementById('availableMemberSearch');
+        const table = document.getElementById('availableMembersTable');
+        const rows = table.querySelectorAll('.member-row');
         const selectAll = document.getElementById('selectAll');
-        const checkboxes = document.querySelectorAll('.email-checkbox');
+        const checkboxes = document.querySelectorAll('.member-checkbox');
         const addBtn = document.getElementById('addSelectedBtn');
         const countDisplay = document.getElementById('selectedCount');
 
@@ -134,13 +134,11 @@
         searchInput.addEventListener('input', function () {
             const query = this.value.toLowerCase();
             rows.forEach(row => {
-                const email = row.querySelector('.email-text').textContent.toLowerCase();
+                const email = row.querySelector('.member-text').textContent.toLowerCase();
                 if (email.includes(query)) {
                     row.style.display = '';
                 } else {
                     row.style.display = 'none';
-                    // Uncheck hidden rows if selectAll is used later? 
-                    // Better to just filter and let user select what's visible
                 }
             });
         });
@@ -149,7 +147,7 @@
         selectAll.addEventListener('change', function () {
             rows.forEach(row => {
                 if (row.style.display !== 'none') {
-                    const cb = row.querySelector('.email-checkbox');
+                    const cb = row.querySelector('.member-checkbox');
                     cb.checked = this.checked;
                 }
             });
@@ -164,11 +162,11 @@
         function updateUI() {
             const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
             addBtn.disabled = checkedCount === 0;
-            countDisplay.innerText = `${checkedCount} email(s) selected`;
+            countDisplay.innerText = `${checkedCount} member(s) selected`;
 
             // Update selectAll state
             const visibleCheckboxes = Array.from(checkboxes).filter(cb =>
-                cb.closest('.email-row').style.display !== 'none'
+                cb.closest('.member-row').style.display !== 'none'
             );
             if (visibleCheckboxes.length > 0) {
                 selectAll.checked = visibleCheckboxes.every(cb => cb.checked);

@@ -25,7 +25,7 @@
                 <tr>
                     <th>Group Name</th>
                     <th>Description</th>
-                    <th>Emails</th>
+                    <th>Members</th>
                     <th class="text-center">Action</th>
                 </tr>
             </thead>
@@ -34,7 +34,7 @@
                 <tr>
                     <td>{{ group.name }}</td>
                     <td>{{ group.description or '—' }}</td>
-                    <td><span class="badge bg-info text-dark">{{ group.email_count }} emails</span></td>
+                    <td><span class="badge bg-info text-dark">{{ group.member_count }} members</span></td>
                     <td class="text-center">
                         <a href="{{ url_for('edit_group', group_id=group.id) }}"
                             class="btn btn-sm btn-outline-primary me-2">

@@ -418,12 +418,8 @@
                     return;
                 }
                 selectedGroups.forEach(gid => {
-                    const emailsInGroup = groupMap[gid] || [];
-                    employees.forEach(emp => {
-                        if (emailsInGroup.includes(emp.email)) {
-                            targetEmployeeIds.add(emp.id);
-                        }
-                    });
+                    const idsInGroup = groupMap[gid] || [];
+                    idsInGroup.forEach(id => targetEmployeeIds.add(id));
                 });
             }
             else if (targetType === 'individuals') {
