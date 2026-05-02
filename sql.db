@@ -120,7 +120,46 @@ CREATE TABLE IF NOT EXISTS device_update_status (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 10. Admin Access (for Microsoft login admin management)
+CREATE TABLE IF NOT EXISTS admin_access (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_admin_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 11. Version History (tracking app.exe deployments)
+CREATE TABLE IF NOT EXISTS version_history (
+    version VARCHAR(20) PRIMARY KEY,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    uploaded_by VARCHAR(255),
+    INDEX idx_uploaded_at (uploaded_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Seed initial admin access
+INSERT IGNORE INTO admin_access (email) VALUES ('pamuditha.it@acorn.lk');
+
+-- 12. Groups
+CREATE TABLE IF NOT EXISTS groups (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 13. Group Members
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id VARCHAR(36) NOT NULL,
+    employee_id VARCHAR(36) NOT NULL,
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, employee_id),
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    INDEX idx_group (group_id),
+    INDEX idx_employee (employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- =============================================
 -- DONE! All tables created.
--- Now your Flask app with MySQL will work perfectly.
 -- =============================================

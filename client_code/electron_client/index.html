@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>AcornHUB v1.1.8</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Custom Title Bar -->
+        <div id="title-bar">
+            <div id="title-drag-region">
+                <img src="assets/logo_s_n.png" style="height: 20px; vertical-align: middle; margin-right: 5px;">
+                <span>AcornHUB</span>
+            </div>
+            <div id="title-bar-btns">
+                <button id="title-bar-minimize" title="Minimize"><i class="fas fa-minus"></i></button>
+                <button id="title-bar-maximize" title="Maximize"><i class="fas fa-expand-alt"></i></button>
+                <button id="title-bar-close" title="Close" style="display: none;"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+
+        <!-- Push content down to account for fixed title bar -->
+        <div style="height: 32px;"></div>
+
+        <!-- Connection Status Banner -->
+        <div id="connection-status">
+            <i class="fas fa-wifi"></i>
+            <div style="flex: 1;">
+                <div id="status-msg">I am AcornHUB, I can't get new messages, please connect to Wi-Fi.</div>
+                <div class="retry-text">Reconnecting automatically...</div>
+            </div>
+        </div>
+
+
+
+        <!-- Initial Page (Registration) -->
+        <div id="initial-page" class="page" style="display: none;">
+            <div class="center-content access-card">
+                <img src="assets/logo_s_n.png" alt="Logo" class="logo-large">
+                <h2 style="color: #16315C; font-weight: 800; margin-bottom: 30px;">AcornHUB Client</h2>
+
+                <p id="login-status" class="text-muted mb-4" style="font-size: 0.9rem; font-weight: 600;">SECURE
+                    EMPLOYEE ACCESS</p>
+
+                <div id="login-error-msg"
+                    style="color: #d9534f; font-size: 0.85rem; margin-bottom: 20px; display: none;">
+                    Your session has expired. Please log in again.
+                </div>
+
+                <button id="ms-login-button" class="ms-login-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 256 256"
+                        style="margin-right: 12px;">
+                        <rect width="124" height="124" fill="#f25022" />
+                        <rect width="124" height="124" x="132" fill="#7fbb00" />
+                        <rect width="124" height="124" y="132" fill="#00a1f1" />
+                        <rect width="124" height="124" x="132" y="132" fill="#ffbb00" />
+                    </svg>
+                    <span>Login with Microsoft</span>
+                </button>
+
+                <p style="margin-top: 30px; font-size: 0.8rem; color: #6388B4;">
+                    Only @acorn.lk accounts are authorized.
+                </p>
+            </div>
+        </div>
+
+        <!-- Content Page (Main UI) -->
+        <div id="content-page" class="page" style="display: none;">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">Message History</div>
+                <div id="history-list" class="scroll-area">
+                    <!-- History items will be injected here -->
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="main-content">
+                <!-- Top Bar (This part is correct according to user) -->
+                <div class="top-bar">
+                    <div id="title-label"></div>
+                    <div class="top-bar-right">
+                        <img src="assets/logo_s_n.png" alt="Logo" class="logo-small">
+                        <div id="countdown-label">60</div>
+                        <button id="stop-button" title="Pause/Resume Timer">
+                            <i class="fas fa-stop"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Two Column Layout -->
+                <div class="content-grid">
+                    <!-- Left Column: Text & Interactions -->
+                    <div class="left-pane">
+                        <!-- Description Card (Fixed Height, Scrollable) -->
+                        <div id="description-card" class="content-card description-fixed">
+                            <div id="message-display"></div>
+                        </div>
+
+                        <!-- Reactions -->
+                        <div class="reactions-box">
+                            <div class="reactions">
+                                <button class="reaction-btn-icon" data-emoji="like">👍 <span
+                                        class="count">0</span></button>
+                                <button class="reaction-btn-icon" data-emoji="unlike">👎 <span
+                                        class="count">0</span></button>
+                                <button class="reaction-btn-icon" data-emoji="heart">❤️ <span
+                                        class="count">0</span></button>
+                                <button class="reaction-btn-icon" data-emoji="cry">😢 <span
+                                        class="count">0</span></button>
+                            </div>
+                        </div>
+
+                        <!-- Feedback Area -->
+                        <div class="feedback-box">
+                            <input type="text" id="feedback-entry" placeholder="Enter feedback...">
+                            <button id="submit-feedback" class="action-btn-styled">Submit Feedback</button>
+                        </div>
+
+                        <!-- Navigation -->
+                        <div class="navigation-box">
+                            <div class="nav-row">
+                                <button id="prev-btn" class="nav-btn">Previous</button>
+                                <button id="next-btn" class="nav-btn">Next</button>
+                            </div>
+                            <button id="minimize-btn" class="action-btn-styled full-width">Minimize to Tray</button>
+                        </div>
+
+                        <!-- Footer Info -->
+                        <div class="footer-info">
+                            <div id="email-display"></div>
+                            <div class="footer-tag">@Developed by Acorn Group IT v1.1.8</div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Media -->
+                    <div class="right-pane">
+                        <div id="media-container" class="media-card-styled">
+                            <div id="media-display-box">
+                                <video id="video-player" controls style="display: none;"></video>
+                                <div id="image-viewer" style="display: none;">
+                                    <img id="content-image" src="">
+                                    <div class="image-actions">
+                                        <button id="download-btn" title="Download Image"><i
+                                                class="fas fa-download"></i></button>
+                                        <button id="fullscreen-btn" title="Full Screen"><i
+                                                class="fas fa-expand"></i></button>
+                                    </div>
+                                    <div class="zoom-controls">
+                                        <button id="zoom-in">+</button>
+                                        <button id="zoom-out">-</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fullscreen Overlay -->
+        <div id="fullscreen-overlay" class="fullscreen-modal" style="display: none;">
+            <button id="close-fullscreen" class="close-overlay"><i class="fas fa-times"></i></button>
+            <div class="fullscreen-content">
+                <img id="fullscreen-image" src="">
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading" style="display: none;">
+            <div class="spinner"></div>
+        </div>
+
+        <div id="notification-dialog" class="modal" style="display: none;">
+            <div class="modal-content">
+                <img src="assets/logo_s_n.png" alt="Logo" class="dialog-logo">
+                <h3>New Message Arrived</h3>
+                <p>Select when you want to view this content:</p>
+
+                <select id="delay-options">
+                    <option value="Play Immediate">Play Immediate</option>
+                    <option value="Play within 15 minutes">Play within 15 minutes</option>
+                    <option value="Play within 30 minutes">Play within 30 minutes</option>
+                    <option value="Play within 1 hour">Play within 1 hour</option>
+                    <option value="Play within 3 hours">Play within 3 hours</option>
+                </select>
+
+                <button id="dialog-ok">Apply Choice</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="success-toast">
+        <i class="fas fa-check-circle"></i>
+        <span>Feedback Sent Successfully!</span>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>

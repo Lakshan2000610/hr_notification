@@ -58,7 +58,7 @@ logging.basicConfig(
 )
 
 class StudentApp(QMainWindow):
-    APP_VERSION = "1.1.3"
+    APP_VERSION = "1.1.4"
     SERVER_URL = "http://127.0.0.1:5000/"
     new_content_signal = Signal(dict)
     update_scroll_signal = Signal()
@@ -138,15 +138,16 @@ class StudentApp(QMainWindow):
                 self.check_content_at_startup()
                 self.start_content_check()
                 self.hide()
+                QTimer.singleShot(0, self.check_for_updates)  # Check immediately
             else:
                 self.stack.setCurrentWidget(self.initial_page)
                 self.show_window()
-                QTimer.singleShot(86400000, self.check_for_updates)
+                QTimer.singleShot(300000, self.check_for_updates)
         else:
             self.is_first_registration = True
             self.stack.setCurrentWidget(self.initial_page)
             self.show_window()
-            QTimer.singleShot(86400000, self.check_for_updates)  # Check for updates after 24 hours
+            QTimer.singleShot(0, self.check_for_updates)  # Check immediately
 
     def create_network_dialog(self):
         dialog = QDialog(self)
@@ -414,7 +415,7 @@ class StudentApp(QMainWindow):
             logging.error(f"Error checking for updates: {str(e)}")
             self.report_update_status('failed', f"Error checking updates: {str(e)}")
         finally:
-            QTimer.singleShot(24 * 60 * 60 * 1000, self.check_for_updates)  # Check again in 24 hours
+            QTimer.singleShot(5 * 60 * 1000, self.check_for_updates)  # Check again in 5 minutes
 
     # Updated download_update method
     def download_update(self, new_version):

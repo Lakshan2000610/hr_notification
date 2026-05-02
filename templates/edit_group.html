@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block title %}Edit Group - AcornHUB{% endblock %}
+{% block content %}
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #7F5FCF, #4a3780);
+        --accent-color: #7F5FCF;
+        --card-bg: #ffffff;
+        --bg-color: #f8f9fa;
+        --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.05);
+    }
+
+    body {
+        background-color: var(--bg-color);
+        font-family: 'Inter', sans-serif;
+    }
+
+    .edit-card {
+        background: var(--card-bg);
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: var(--shadow-soft);
+        margin-bottom: 2rem;
+    }
+
+    .page-title {
+        font-size: 2.2rem;
+        font-weight: 800;
+        background: var(--primary-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+
+    /* Table Styles */
+    .modern-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 8px;
+    }
+
+    .modern-table th {
+        color: #636e72;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        padding: 1rem;
+    }
+
+    .modern-table tbody tr {
+        background: #fff;
+        transition: all 0.2s;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+    }
+
+    .modern-table tbody tr:hover {
+        transform: scale(1.005);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+    }
+
+    .modern-table td {
+        padding: 1rem;
+        vertical-align: middle;
+        border-top: 1px solid #f1f1f1;
+        border-bottom: 1px solid #f1f1f1;
+    }
+
+    .modern-table td:first-child {
+        border-left: 1px solid #f1f1f1;
+        border-radius: 12px 0 0 12px;
+    }
+
+    .modern-table td:last-child {
+        border-right: 1px solid #f1f1f1;
+        border-radius: 0 12px 12px 0;
+    }
+
+    /* Controls */
+    .search-bar {
+        max-width: 300px;
+        border-radius: 50px;
+        padding: 10px 20px;
+        border: 1px solid #dfe6e9;
+    }
+
+    .btn-action {
+        border-radius: 50px;
+        padding: 8px 20px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .btn-remove-selected {
+        background: #ff7675;
+        color: white;
+        border: none;
+    }
+
+    .btn-remove-selected:hover {
+        background: #d63031;
+        transform: translateY(-2px);
+        color: white;
+    }
+
+    .btn-add-selected {
+        background: #2ecc71;
+        color: white;
+        border: none;
+    }
+
+    .btn-add-selected:hover {
+        background: #27ae60;
+        transform: translateY(-2px);
+        color: white;
+    }
+
+    .back-link {
+        color: #636e72;
+        text-decoration: none;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 1.5rem;
+    }
+
+    .back-link:hover {
+        color: var(--accent-color);
+    }
+
+    /* Pagination */
+    .pagination-container {
+        display: flex;
+        justify-content: center;
+        gap: 5px;
+        margin-top: 1.5rem;
+    }
+
+    .page-btn {
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        border: 1px solid #dfe6e9;
+        background: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .page-btn.active {
+        background: var(--primary-gradient);
+        color: white;
+        border: none;
+    }
+</style>
+
+<div class="container mt-4 mb-5">
+    <a href="{{ url_for('manage_groups') }}" class="back-link"><i class="bi bi-arrow-left"></i> Back to Groups</a>
+
+    <div class="mb-5 text-center">
+        <h1 class="page-title">{{ group.name }}</h1>
+        <p class="text-muted">{{ group.description or 'No description' }}</p>
+    </div>
+
+    <!-- PART 1: Current Members (Top Section with max 10 members + Pagination) -->
+    <div class="edit-card">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 gap-3">
+            <h2 class="h4 fw-bold mb-0">Group Members (<span id="countDisplay">{{ members|length }}</span>)</h2>
+            <div class="d-flex gap-3">
+                <input type="text" id="memberSearch" class="form-control search-bar"
+                    placeholder="Search current members...">
+                <button id="btnRemoveBulk" class="btn btn-action btn-remove-selected" style="display: none;">
+                    <i class="bi bi-person-dash me-2"></i>Remove Selected
+                </button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="modern-table" id="memberTable">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" id="selectAllMembers" class="form-check-input"></th>
+                        <th>Employee Email</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="memberList">
+                    {% for member in members %}
+                    <tr class="member-row" data-id="{{ member.id }}">
+                        <td><input type="checkbox" class="form-check-input member-check" data-id="{{ member.id }}"></td>
+                        <td class="email-cell fw-bold">{{ member.email }}</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-danger rounded-pill px-3"
+                                onclick="removeOne('{{ member.id }}')">
+                                Remove
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="emptyMemberRow">
+                        <td colspan="3" class="text-center py-5 text-muted">No members in this group yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="memberPagination" class="pagination-container"></div>
+    </div>
+
+    <!-- PART 2: Add Active Employees (Recruitment Section) -->
+    <div class="edit-card mt-5">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4 gap-3">
+            <h2 class="h4 fw-bold mb-0">Recruit New Members</h2>
+            <div class="d-flex gap-3">
+                <button id="btnAddBulk" class="btn btn-action btn-add-selected" style="display: none;">
+                    <i class="bi bi-person-plus me-2"></i>Add Selected
+                </button>
+                <input type="text" id="recruitSearch" class="form-control search-bar"
+                    placeholder="Search available users...">
+            </div>
+        </div>
+
+        <div class="alert alert-info py-2 small mb-4">
+            <i class="bi bi-info-circle me-2"></i> Only employees approved in <strong>Monitor Devices</strong> appear
+            here.
+        </div>
+
+        <div class="table-responsive">
+            <table class="modern-table" id="recruitTable">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" id="selectAllRecruits" class="form-check-input"></th>
+                        <th>Available Active Email</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="recruitList">
+                    {% for emp in all_employees %}
+                    <tr class="recruit-row" data-id="{{ emp.id }}">
+                        <td><input type="checkbox" class="form-check-input recruit-check" data-id="{{ emp.id }}"></td>
+                        <td class="recruit-email-cell fw-bold">{{ emp.email }}</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary rounded-pill px-3"
+                                onclick="addOne('{{ emp.id }}')">
+                                <i class="bi bi-plus-lg me-1"></i> Add
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center py-5 text-muted">No additional active employees available.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const groupId = "{{ group.id }}";
+
+    // --- Member Management (Top Table) ---
+    let memberPage = 1;
+    const itemsPerPage = 10;
+    const memberRows = Array.from(document.querySelectorAll('.member-row'));
+
+    function renderMemberTable() {
+        const searchTerm = document.getElementById('memberSearch').value.toLowerCase();
+        const filtered = memberRows.filter(row => row.querySelector('.email-cell').innerText.toLowerCase().includes(searchTerm));
+
+        const totalPages = Math.ceil(filtered.length / itemsPerPage);
+        const start = (memberPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+
+        memberRows.forEach(row => row.style.display = 'none');
+        filtered.slice(start, end).forEach(row => row.style.display = '');
+
+        renderPagination('memberPagination', totalPages, memberPage, (p) => {
+            memberPage = p;
+            renderMemberTable();
+        });
+    }
+
+    document.getElementById('memberSearch').addEventListener('input', () => {
+        memberPage = 1;
+        renderMemberTable();
+    });
+
+    // --- Recruitment Management (Bottom Table) ---
+    const recruitRows = Array.from(document.querySelectorAll('.recruit-row'));
+    function renderRecruitTable() {
+        const searchTerm = document.getElementById('recruitSearch').value.toLowerCase();
+        recruitRows.forEach(row => {
+            const email = row.querySelector('.recruit-email-cell').innerText.toLowerCase();
+            row.style.display = email.includes(searchTerm) ? '' : 'none';
+        });
+    }
+    document.getElementById('recruitSearch').addEventListener('input', renderRecruitTable);
+
+    // --- Pagination Helper ---
+    function renderPagination(containerId, totalPages, current, onPageChange) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        if (totalPages <= 1) return;
+
+        for (let i = 1; i <= totalPages; i++) {
+            const btn = document.createElement('div');
+            btn.className = `page-btn ${i === current ? 'active' : ''}`;
+            btn.innerText = i;
+            btn.onclick = () => onPageChange(i);
+            container.appendChild(btn);
+        }
+    }
+
+    // --- Checkbox Logic ---
+    const selectAllMembers = document.getElementById('selectAllMembers');
+    const selectAllRecruits = document.getElementById('selectAllRecruits');
+    const btnRemoveBulk = document.getElementById('btnRemoveBulk');
+    const btnAddBulk = document.getElementById('btnAddBulk');
+
+    const updateCheckState = () => {
+        const checkedMembers = document.querySelectorAll('.member-check:checked').length;
+        btnRemoveBulk.style.display = checkedMembers > 0 ? 'block' : 'none';
+
+        const checkedRecruits = document.querySelectorAll('.recruit-check:checked').length;
+        btnAddBulk.style.display = checkedRecruits > 0 ? 'block' : 'none';
+    };
+
+    selectAllMembers.addEventListener('change', () => {
+        document.querySelectorAll('.member-check').forEach(cb => {
+            if (cb.closest('tr').style.display !== 'none') cb.checked = selectAllMembers.checked;
+        });
+        updateCheckState();
+    });
+
+    selectAllRecruits.addEventListener('change', () => {
+        document.querySelectorAll('.recruit-check').forEach(cb => {
+            if (cb.closest('tr').style.display !== 'none') cb.checked = selectAllRecruits.checked;
+        });
+        updateCheckState();
+    });
+
+    document.addEventListener('change', (e) => {
+        if (e.target.classList.contains('member-check') || e.target.classList.contains('recruit-check')) {
+            updateCheckState();
+        }
+    });
+
+    // --- API Calls ---
+    async function addOne(empId) {
+        await sendRequest('/bulk_add_group_members', [empId]);
+    }
+    async function removeOne(empId) {
+        if (confirm('Remove this member?')) await sendRequest('/bulk_remove_group_members', [empId]);
+    }
+
+    btnRemoveBulk.addEventListener('click', async () => {
+        const ids = Array.from(document.querySelectorAll('.member-check:checked')).map(cb => cb.dataset.id);
+        if (ids.length && confirm(`Remove ${ids.length} selected members?`)) {
+            await sendRequest('/bulk_remove_group_members', ids);
+        }
+    });
+
+    btnAddBulk.addEventListener('click', async () => {
+        const ids = Array.from(document.querySelectorAll('.recruit-check:checked')).map(cb => cb.dataset.id);
+        if (ids.length) await sendRequest('/bulk_add_group_members', ids);
+    });
+
+    async function sendRequest(url, ids) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group_id: groupId, employee_ids: ids })
+            });
+            if (res.ok) location.reload();
+            else alert('Operation failed.');
+        } catch (e) { console.error(e); alert('Request failed'); }
+    }
+
+    // Init
+    window.onload = renderMemberTable;
+
+</script>
+{% endblock %}

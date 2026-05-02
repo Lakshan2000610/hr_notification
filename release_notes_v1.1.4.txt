@@ -1,0 +1,13 @@
+AcornHUB Update Summary v1.1.4
+-----------------------------
+1. Version Number: Incremented to v1.1.4
+2. Footer: Updated to "@Developed by Acorn Group IT v1.1.4"
+3. UI: Removed debug "JS Loaded!" text.
+4. Feature: Enhanced Sidebar History with sorting (Newest First).
+5. Feature: Clickable links in messages open automatically in Microsoft Edge.
+6. System: Network monitoring added with alert banner (Offline/Server Error).
+7. System: "Click-to-Minimize" banner feature added.
+8. System: Automatic Windows Start (Registry) implemented.
+9. Packaging: New production setup file generated.
+
+The auto-update is now active for all clients.

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .modal-content {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            border-radius: 30px;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 30px;
+            background: white !important;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .dialog-logo {
+            height: 50px;
+            margin-bottom: 20px;
+        }
+
+        h3 {
+            color: #16315C;
+            font-weight: 800;
+            font-size: 24px;
+            margin: 10px 0;
+        }
+
+        p {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #delay-options {
+            width: 100%;
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 2px solid #e0e6f5;
+            margin-bottom: 25px;
+            font-size: 16px;
+            background: #fff;
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2316315C%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+            background-repeat: no-repeat;
+            background-position: right 15px top 50%;
+            background-size: 12px auto;
+            transition: all 0.3s ease;
+            color: #16315C;
+            font-weight: 500;
+        }
+
+        #delay-options:focus {
+            border-color: #6388B4;
+        }
+
+        #dialog-ok {
+            background-color: #16315C;
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            width: 100%;
+            font-weight: 800;
+            font-size: 17px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(31, 69, 133, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #dialog-ok:hover {
+            background-color: #2a5298;
+            transform: translateY(-2px);
+        }
+
+        #dialog-ok:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="modal-content">
+        <img src="assets/logo_s_n.png" alt="Logo" class="dialog-logo">
+        <h3>New Message Arrived</h3>
+        <p>Select when you want to view this content:</p>
+
+        <select id="delay-options">
+            <option value="Play Immediate">Play Immediate</option>
+            <option value="Play within 15 minutes">Play within 15 minutes</option>
+            <option value="Play within 30 minutes">Play within 30 minutes</option>
+            <option value="Play within 1 hour">Play within 1 hour</option>
+            <option value="Play within 3 hours">Play within 3 hours</option>
+        </select>
+
+        <button id="dialog-ok">Apply Choice</button>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        document.getElementById('dialog-ok').addEventListener('click', () => {
+            const delay = document.getElementById('delay-options').value;
+            ipcRenderer.send('notification-response', delay);
+        });
+    </script>
+</body>
+
+</html>

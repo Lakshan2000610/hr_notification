@@ -2,247 +2,538 @@
 {% block title %}Upload New App Version{% endblock %}
 {% block content %}
 <style>
-    body { background: #F5F0FF; font-family: 'Segoe UI', sans-serif; }
-    .container { max-width: 1100px; margin: 40px auto; padding: 30px; background: white; border-radius: 20px; box-shadow: 0 15px 40px rgba(127,95,207,0.15); }
-    h2, h4 { color: #7F5FCF; font-weight: 700; }
-    .badge { font-size: 1em; padding: 8px 16px; border-radius: 12px; }
-    .btn-primary {
+    body {
+        background: #F4F6F9;
+        font-family: 'Poppins', 'Segoe UI', sans-serif;
+    }
+
+    .dashboard-container {
+        padding: 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    /* Cards */
+    .stat-card {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        transition: transform 0.3s ease;
+        text-align: center;
+        border-bottom: 4px solid transparent;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .stat-card.success {
+        border-bottom-color: #2ECC71;
+    }
+
+    .stat-card.pending {
+        border-bottom-color: #F1C40F;
+    }
+
+    .stat-card.failed {
+        border-bottom-color: #E74C3C;
+    }
+
+    .stat-number {
+        font-size: 3em;
+        font-weight: 700;
+        color: #2C3E50;
+        margin-bottom: 5px;
+    }
+
+    .stat-label {
+        font-size: 1.1em;
+        color: #7F8C8D;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* Content Cards */
+    .content-card {
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+        margin-bottom: 30px;
+    }
+
+    .card-title {
+        font-size: 1.4em;
+        font-weight: 600;
+        color: #2C3E50;
+        margin-bottom: 25px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .card-title i {
+        color: #7F5FCF;
+    }
+
+    /* Table */
+    .modern-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 8px;
+    }
+
+    .modern-table thead th {
+        background: transparent;
+        color: #95A5A6;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.85em;
+        padding: 15px;
+        border: none;
+    }
+
+    .modern-table tbody tr {
+        background: #fff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+        transition: transform 0.2s;
+    }
+
+    .modern-table tbody tr:hover {
+        transform: scale(1.01);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+    }
+
+    .modern-table td {
+        padding: 20px 15px;
+        vertical-align: middle;
+        border-top: 1px solid #eee;
+        border-bottom: 1px solid #eee;
+    }
+
+    .modern-table td:first-child {
+        border-left: 1px solid #eee;
+        border-top-left-radius: 10px;
+        border-bottom-left-radius: 10px;
+    }
+
+    .modern-table td:last-child {
+        border-right: 1px solid #eee;
+        border-top-right-radius: 10px;
+        border-bottom-right-radius: 10px;
+    }
+
+    /* Badges */
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 50px;
+        font-size: 0.85em;
+        font-weight: 600;
+        display: inline-block;
+    }
+
+    .status-badge.success {
+        background: #E8F8F5;
+        color: #27AE60;
+    }
+
+    .status-badge.pending {
+        background: #FEF9E7;
+        color: #F39C12;
+    }
+
+    .status-badge.failed {
+        background: #FDEDED;
+        color: #E74C3C;
+    }
+
+    /* Upload Area */
+    .upload-area {
+        border: 2px dashed #B6A3D8;
+        border-radius: 16px;
+        padding: 40px;
+        text-align: center;
+        background: #FBF9FF;
+        transition: all 0.3s;
+    }
+
+    .upload-area:hover {
+        background: #fff;
+        border-color: #7F5FCF;
+    }
+
+    .btn-upload {
         background: linear-gradient(135deg, #7F5FCF, #9D7BE1);
-        border: none; border-radius: 12px; padding: 12px 24px;
-        font-weight: 600; transition: all 0.3s;
+        color: white;
+        padding: 12px 30px;
+        border-radius: 50px;
+        border: none;
+        font-weight: 600;
+        box-shadow: 0 10px 20px rgba(127, 95, 207, 0.2);
+        transition: all 0.3s;
     }
-    .btn-primary:hover {
-        background: linear-gradient(135deg, #6B4BB8, #8B66D4);
+
+    .btn-upload:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(127,95,207,0.3);
+        box-shadow: 0 15px 30px rgba(127, 95, 207, 0.3);
     }
-    .btn-danger {
-        background: #e74c3c; border: none; border-radius: 8px; font-size: 0.9em;
+
+    /* Version Display */
+    .version-display {
+        font-size: 3em;
+        font-weight: 800;
+        background: linear-gradient(90deg, #7F5FCF, #A569BD);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
-    .btn-danger:hover { background: #c0392b; }
-    .btn-secondary { background: #B6A3D8; border: none; }
-    .btn-secondary:hover { background: #9f8cc4; }
-    .table { border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-    .table thead { background: #7F5FCF; color: white; }
-    .table tbody tr:hover { background: #f8f4ff; }
-    .current-badge {
-        background: #27ae60; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.8em;
-    }
-    .section-title {
-        color: #7F5FCF; font-weight: 700; font-size: 1.3em; margin: 30px 0 15px;
-        position: relative; padding-bottom: 8px;
-    }
-    .section-title::after {
-        content: ''; position: absolute; left: 0; bottom: 0;
-        width: 80px; height: 4px; background: linear-gradient(90deg, #7F5FCF, #B6A3D8); border-radius: 2px;
-    }
-    .alert { border-radius: 12px; }
 </style>
 
-<div class="container">
-    <h2 class="mb-4">Upload New App Version</h2>
+<div class="dashboard-container">
 
-    <!-- Page Status -->
-    <div class="mb-4">
-        <h4>Page Status</h4>
-        <span id="page-status" class="badge bg-secondary">Checking readiness...</span>
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-5">
+        <div>
+            <h2 class="fw-bold" style="color: #2C3E50;">Update Dashboard</h2>
+            <p class="text-muted">Monitor global application updates and rollouts</p>
+        </div>
+        <div class="text-end">
+            <small class="text-uppercase text-muted fw-bold">Live Version</small>
+            <div class="version-display">{{ current_version or 'v0.0.0' }}</div>
+        </div>
     </div>
 
-    <!-- Current Version -->
-    <div class="mb-5">
-        <h4>Current Active Version</h4>
-        {% if current_version %}
-            <p><strong>{{ current_version }}</strong> <span class="current-badge">LIVE</span></p>
-            <a href="{{ url_for('get_app') }}" class="btn btn-secondary" download>Download Current app.exe</a>
-        {% else %}
-            <p class="text-muted">No version uploaded yet.</p>
-        {% endif %}
+    <!-- Stats Row -->
+    <div class="row mb-4 g-4">
+        <div class="col-md-4">
+            <div class="stat-card success">
+                <div class="stat-number" id="count-success">0</div>
+                <div class="stat-label">Successful Updates</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card pending">
+                <div class="stat-number" id="count-pending">0</div>
+                <div class="stat-label">Pending Rollouts</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card failed">
+                <div class="stat-number" id="count-failed">0</div>
+                <div class="stat-label">Failed Updates</div>
+            </div>
+        </div>
     </div>
 
-    <!-- Version History Table -->
-    <div class="section-title">Uploaded Version History</div>
-    <div class="table-responsive">
-        <table class="table table-bordered" id="version-table">
-            <thead>
-                <tr>
-                    <th>Version</th>
-                    <th>Uploaded On</th>
-                    <th>Uploaded By</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for v in version_history %}
-                <tr data-version="{{ v.version }}">
-                    <td><strong>{{ v.version }}</strong></td>
-                    <td>{{ v.uploaded_at.strftime("%d %b %Y, %I:%M %p") }}</td>
-                    <td>{{ v.uploaded_by or "Unknown" }}</td>
-                    <td>
-                        {% if v.version == current_version %}
-                            <span class="current-badge">Current Active</span>
-                        {% else %}
-                            <span class="text-muted">Archived</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if v.version != current_version %}
-                            <button class="btn btn-danger btn-sm delete-version" data-version="{{ v.version }}">
-                                Delete
-                            </button>
-                        {% else %}
-                            <em>Cannot delete active version</em>
-                        {% endif %}
-                    </td>
-                </tr>
+    <!-- Visualization Row -->
+    <div class="row mb-5 g-4">
+        <!-- Chart -->
+        <div class="col-lg-8">
+            <div class="content-card h-100">
+                <div class="card-title">
+                    <i class="bi bi-pie-chart-fill"></i> Deployment Progress
+                </div>
+                <div style="height: 350px; position: relative;">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Form -->
+        <div class="col-lg-4">
+            <div class="content-card h-100">
+                <div class="card-title">
+                    <i class="bi bi-cloud-upload"></i> Deploy Output
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} rounded-3 small">
+                    {{ message }}
+                </div>
                 {% endfor %}
-            </tbody>
-        </table>
-        {% if version_history|length == 0 %}
-            <p class="text-center text-muted mt-3">No version history yet.</p>
-        {% endif %}
-    </div>
+                {% endif %}
+                {% endwith %}
 
-    <!-- Upload Form -->
-    <div class="section-title mt-5">Upload New Version</div>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} mt-3">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+                {% if error %}
+                <div class="alert alert-danger rounded-3 small">{{ error }}</div>
+                {% endif %}
+                {% if success %}
+                <div class="alert alert-success rounded-3 small">{{ success }}</div>
+                {% endif %}
 
-    <form method="post" enctype="multipart/form-data" class="mt-4">
-        <div class="mb-3">
-            <label for="version_file" class="form-label">Version File (version.txt)</label>
-            <input type="file" class="form-control" id="version_file" name="version_file" accept=".txt" required>
+                <form method="post" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label class="form-label text-muted small fw-bold">1. VERSION FILE (.txt)</label>
+                        <input type="file" class="form-control" name="version_file" accept=".txt" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label text-muted small fw-bold">2. APPLICATION (.exe)</label>
+                        <input type="file" class="form-control" name="exe_file" accept=".exe" required>
+                    </div>
+
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn-upload w-100">
+                            Deploy Update
+                        </button>
+                    </div>
+                </form>
+
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('get_app') }}" class="text-muted small text-decoration-none">
+                        <i class="bi bi-download"></i> Download Current Output
+                    </a>
+                </div>
+            </div>
         </div>
-        <div class="mb-3">
-            <label for="exe_file" class="form-label">Application File (app.exe)</label>
-            <input type="file" class="form-control" id="exe_file" name="exe_file" accept=".exe" required>
+    </div>
+
+    <!-- Live Status Table -->
+    <div class="content-card">
+        <div class="card-title d-flex justify-content-between">
+            <span><i class="bi bi-hdd-network"></i> Live Device Status</span>
+            <span class="badge bg-light text-dark fw-normal" id="last-updated">Updating...</span>
         </div>
-        <button type="submit" class="btn btn-primary">Upload New Version</button>
-    </form>
 
-    <!-- Install Status -->
-    <div class="section-title mt-5">Live Installation Status</div>
-    <div id="install-status" class="alert alert-info">
-        <p>Loading install status...</p>
-    </div>
-    <div class="table-responsive mt-3">
-        <table class="table table-bordered" id="status-table">
-            <thead>
-                <tr>
-                    <th>Employee ID</th>
-                    <th>Device ID</th>
-                    <th>Version</th>
-                    <th>Status</th>
-                    <th>Last Attempt</th>
-                    <th>Error</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="modern-table" id="status-table">
+                <thead>
+                    <tr>
+                        <th>Employee Email</th>
+                        <th>Device / Host</th>
+                        <th>Current Version</th>
+                        <th>Status</th>
+                        <th>Last Activity</th>
+                        <th>Diagnostics</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <!-- Endpoints Info -->
-    <div class="mt-5 p-4 bg-light rounded">
-        <h5>Update Status Endpoints</h5>
-        <ul class="small">
-            <li><code>/update_status/summary</code> → Success/Pending/Failed counts</li>
-            <li><code>/update_status/all</code> → Full device status list</li>
-        </ul>
+    <!-- Version History (Hidden or Minimized per request? I'll keep it simple at bottom) -->
+    <div class="content-card mt-4">
+        <div class="card-title"><i class="bi bi-clock-history"></i> Version History</div>
+        <div class="table-responsive">
+            <table class="table table-borderless">
+                <thead class="text-muted">
+                    <tr>
+                        <th>Version</th>
+                        <th>Uploaded On</th>
+                        <th>Uploaded By</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in version_history %}
+                    <tr>
+                        <td class="fw-bold">{{ v.version }}</td>
+                        <td>{{ v.uploaded_at.strftime("%d %b %Y, %I:%M %p") }}</td>
+                        <td>{{ v.uploaded_by or "Unknown" }}</td>
+                        <td>
+                            {% if v.version == current_version %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Archived</span>
+                            {% endif %}
+                        </td>
+                        <td class="d-flex gap-3 align-items-center">
+                            <a href="{{ url_for('download_version', version=v.version) }}" class="text-primary"
+                                title="Download this version">
+                                <i class="bi bi-cloud-download"></i>
+                            </a>
+                            {% if v.version != current_version %}
+                            <button class="btn btn-link text-danger p-0 delete-version" data-version="{{ v.version }}"
+                                title="Delete this version">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if version_history|length == 0 %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No history logs available via standard fetch.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
     </div>
+
 </div>
 
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Fetch page readiness
-    async function fetchPageStatus() {
-        try {
-            const res = await fetch('/check_upload_readiness');
-            const data = await res.json();
-            const el = document.getElementById('page-status');
-            if (res.ok && data.status === 'ready') {
-                el.className = 'badge bg-success';
-                el.textContent = 'Ready to Upload';
-            } else {
-                el.className = 'badge bg-danger';
-                el.textContent = data.message || 'Upload Blocked';
-            }
-        } catch (e) {
-            document.getElementById('page-status').className = 'badge bg-danger';
-            document.getElementById('page-status').textContent = 'Error';
-        }
-    }
+    let statusChart = null;
+    let updateInterval = null;
 
-    // Fetch install status
-    async function fetchInstallStatus() {
-        try {
-            const res = await fetch('/update_status/summary');
-            const data = await res.json();
-            const div = document.getElementById('install-status');
-            const tbody = document.getElementById('status-table').querySelector('tbody');
-
-            if (res.ok) {
-                div.innerHTML = `
-                    <p><strong>Successful:</strong> ${data.successful} | 
-                       <strong>Pending:</strong> ${data.pending} | 
-                       <strong>Failed:</strong> ${data.failed}</p>
-                    <small>Last updated: ${new Date().toLocaleString()}</small>
-                `;
-
-                const detailRes = await fetch('/update_status/all');
-                const details = await detailRes.json();
-                tbody.innerHTML = '';
-                details.forEach(r => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${r.employee_id || '-'}</td>
-                        <td>${r.device_id}</td>
-                        <td>${r.version || '—'}</td>
-                        <td><strong>${r.status || 'unknown'}</strong></td>
-                        <td>${r.last_attempted_at ? new Date(r.last_attempted_at).toLocaleString() : '—'}</td>
-                        <td>${r.error_message || '—'}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
-        } catch (e) {
-            document.getElementById('install-status').innerHTML = '<p class="text-danger">Failed to load status</p>';
-        }
-    }
-
-    // Delete Version
-    document.addEventListener('click', async function(e) {
-        if (e.target.classList.contains('delete-version')) {
-            const version = e.target.getAttribute('data-version');
-            if (!confirm(`Delete version ${version} permanently?\nThis will remove the backup files.`)) return;
-
-            try {
-                const res = await fetch('/delete_version', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ version: version })
-                });
-                const result = await res.json();
-
-                if (res.ok) {
-                    e.target.closest('tr').remove();
-                    alert(`Version ${version} deleted successfully.`);
-                } else {
-                    alert(result.error || 'Delete failed');
+    // --- Visualization ---
+    function initChart() {
+        const ctx = document.getElementById('statusChart').getContext('2d');
+        statusChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Success', 'Pending', 'Failed'],
+                datasets: [{
+                    data: [0, 0, 0],
+                    backgroundColor: ['#2ECC71', '#F1C40F', '#E74C3C'],
+                    borderWidth: 0,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            font: { size: 12 }
+                        }
+                    }
                 }
-            } catch (err) {
-                alert('Network error');
             }
+        });
+    }
+
+    let latestVersion = '{{ current_version }}';
+
+    async function fetchData() {
+        try {
+            // 1. Fetch Summary
+            const summaryRes = await fetch('/update_status/summary');
+            const summary = await summaryRes.json();
+            latestVersion = summary.latest_version; // Use live version from server
+
+            // Update Numbers
+            countUp('count-success', summary.successful);
+            countUp('count-pending', summary.pending);
+            countUp('count-failed', summary.failed);
+
+            // Update Chart
+            if (statusChart) {
+                statusChart.data.datasets[0].data = [summary.successful, summary.pending, summary.failed];
+                statusChart.update();
+            }
+
+            // 2. Fetch Details
+            const detailsRes = await fetch('/update_status/all');
+            const details = await detailsRes.json();
+            renderTable(details);
+
+            document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+
+        } catch (e) {
+            console.error("Fetch error:", e);
         }
+    }
+
+    function renderTable(data) {
+        const tbody = document.querySelector('#status-table tbody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No device data recorded yet.</td></tr>';
+            return;
+        }
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+
+            let statusStr = row.status || 'unknown';
+            let statusClass = 'pending';
+
+            // Logic: Success only if status is success AND version is latest
+            if (row.status === 'success') {
+                if (row.version === latestVersion) {
+                    statusClass = 'success';
+                    statusStr = 'Success';
+                } else {
+                    statusClass = 'pending';
+                    statusStr = 'Outdated';
+                }
+            } else if (row.status === 'failed') {
+                statusClass = 'failed';
+                statusStr = 'Failed';
+            }
+
+            const dateStr = row.last_attempted_at ? new Date(row.last_attempted_at).toLocaleString() : '—';
+
+            tr.innerHTML = `
+                <td><span class="fw-bold text-dark">${row.email || 'Unknown'}</span></td>
+                <td><code class="text-primary">${row.device_id || '-'}</code></td>
+                <td>${row.version || '—'} ${row.version === latestVersion ? '✅' : '⚠️'}</td>
+                <td><span class="status-badge ${statusClass}">${statusStr}</span></td>
+                <td class="text-muted small">${dateStr}</td>
+                <td class="text-danger small">${row.error_message || ''}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // --- Utilities ---
+    function countUp(elementId, target) {
+        const el = document.getElementById(elementId);
+        const current = parseInt(el.innerText);
+        if (current !== target) {
+            el.innerText = target; // Simple set for now, animate if needed
+        }
+    }
+
+    // --- Init ---
+    document.addEventListener('DOMContentLoaded', () => {
+        initChart();
+        fetchData();
+        updateInterval = setInterval(fetchData, 10000); // 10s refresh
+
+        // Delete Version Handling
+        document.querySelectorAll('.delete-version').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const version = btn.dataset.version;
+                if (confirm(`Are you sure you want to delete version ${version}? Any backups for this version will be permanently removed.`)) {
+                    try {
+                        const res = await fetch('/delete_version', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ version: version })
+                        });
+                        if (res.ok) {
+                            // Flash success message by reloading (Flask will handle the flash if redirected, 
+                            // but here we just reload to see the result of the deletion in the history table)
+                            location.reload();
+                        } else {
+                            const data = await res.json();
+                            alert('Delete failed: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Request failed: ' + e.message);
+                    }
+                }
+            });
+        });
     });
 
-    // Auto-refresh
-    fetchPageStatus();
-    fetchInstallStatus();
-    setInterval(fetchPageStatus, 30000);
-    setInterval(fetchInstallStatus, 30000);
+    // Cleanup if navigating away (though mostly full refresh in Flask)
+    window.addEventListener('beforeunload', () => {
+        if (updateInterval) clearInterval(updateInterval);
+    });
+
 </script>
 {% endblock %}

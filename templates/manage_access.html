@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Manage Access - AcornHUB{% endblock %}
+{% block content %}
+<style>
+    :root {
+        --primary: #7F5FCF;
+        --secondary: #B6A3D8;
+        --bg-soft: #F5F0FF;
+        --card-bg: #FFFFFF;
+        --text-main: #2D1B5E;
+    }
+
+    .access-container {
+        padding: 40px 20px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .page-title {
+        color: var(--text-main);
+        font-weight: 800;
+        font-size: 2.2rem;
+        margin-bottom: 30px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .access-card {
+        background: var(--card-bg);
+        border-radius: 24px;
+        padding: 30px;
+        box-shadow: 0 10px 40px rgba(127, 95, 207, 0.08);
+        border: 1px solid rgba(182, 163, 216, 0.2);
+    }
+
+    .form-control {
+        border-radius: 12px;
+        border: 2px solid #EEE5FF;
+        padding: 12px 20px;
+        transition: all 0.3s;
+    }
+
+    .form-control:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(127, 95, 207, 0.1);
+    }
+
+    .btn-add {
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 25px;
+        font-weight: 700;
+        transition: all 0.3s;
+    }
+
+    .btn-add:hover {
+        background: #6a4bbd;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(127, 95, 207, 0.3);
+    }
+
+    .admin-list {
+        margin-top: 40px;
+    }
+
+    .admin-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 20px;
+        background: white;
+        border-radius: 16px;
+        margin-bottom: 12px;
+        border: 1px solid #F0E9FF;
+    }
+
+    .admin-email {
+        font-weight: 600;
+        color: var(--text-main);
+    }
+
+    .btn-delete {
+        color: #FF4D4D;
+        background: #FFF0F0;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+    }
+
+    .btn-delete:hover {
+        background: #FF4D4D;
+        color: white;
+    }
+</style>
+
+<div class="access-container">
+    <h1 class="page-title">
+        <i class="bi bi-shield-lock-fill"></i>
+        Access Management
+    </h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show mb-4" role="alert" style="border-radius: 16px;">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <div class="access-card">
+        <h5 class="mb-3 fw-bold" style="color: var(--text-main);">Grant Admin Access</h5>
+        <form action="{{ url_for('manage_access') }}" method="POST" class="d-flex gap-2">
+            <input type="hidden" name="action" value="add">
+            <input type="email" name="email" class="form-control" placeholder="Enter Microsoft account email" required>
+            <button type="submit" class="btn-add">Grant Access</button>
+        </form>
+    </div>
+
+    <div class="admin-list">
+        <h5 class="mb-3 fw-bold" style="color: var(--text-main);">Current Admins</h5>
+        {% for admin in admins %}
+        <div class="admin-item">
+            <div>
+                <div class="admin-email">{{ admin.email }}</div>
+                <small class="text-muted">Added: {{ admin.created_at.strftime('%Y-%m-%d') }}</small>
+            </div>
+            <form action="{{ url_for('manage_access') }}" method="POST"
+                onsubmit="return confirm('Revoke access for this user?')">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="email" value="{{ admin.email }}">
+                <button type="submit" class="btn-delete">Revoke Access</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
