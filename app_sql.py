@@ -1,5 +1,5 @@
-import logging
-from flask import Flask, request, jsonify, send_file, render_template, session, redirect, url_for, flash
+from venv import logger
+from flask import Flask, request, jsonify,send_file, render_template, session, redirect, url_for
 from datetime import datetime, timedelta, timezone
 import threading
 import time
@@ -7,28 +7,22 @@ import uuid
 import os
 from collections import defaultdict
 import shutil
+from datetime import datetime, timezone, timedelta
 from dateutil import parser
 import re
 import tempfile
 import urllib.parse
+import logging
 import requests
-import pkg_resources
-import json
 from functools import wraps
+import json
+from dateutil import parser
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import Error
 from mysql.connector.pooling import MySQLConnectionPool
 import pytz
-import msal
-
-# Microsoft Auth config
-CLIENT_ID = "7aac3bf0-10c1-4f11-8152-cca5c43f4100"
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")  # Add this to your .env
-TENANT_ID = "bfbd054f-b057-4e89-bc14-ededfa3aa7d0"
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-SCOPE = ["User.Read"]
 
 
 app = Flask(__name__)
@@ -36,15 +30,15 @@ app.secret_key = os.getenv('SECRET_KEY', 'super_secret_key')  # Load from .env o
 
 # MySQL configuration (add to your .env)
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_USER = os.getenv("MYSQL_USER", "hr_app")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Acorn2025!")
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "hr_notification")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 
 # Connection pool (recommended)
 db_pool = None
 
-SERVER_URL = "http://127.0.0.1:5000/"
+SERVER_URL = "https://hrnotification.acorngroup.lk/"
 
 # Load environment variables from .env file
 load_dotenv()
@@ -116,6 +110,56 @@ def execute_query(query, params=None, fetch=False, commit=False):
         if conn:
             conn.close()
 
+def init_groups_tables():
+    try:
+        # Create groups table
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS `groups` (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """, commit=True)
+        
+        # Create group_members table (NEW)
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS group_members (
+                group_id INT NOT NULL,
+                employee_id VARCHAR(255) NOT NULL,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (group_id, employee_id),
+                FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """, commit=True)
+
+        # Migrate data from group_emails to group_members if group_emails exists
+        try:
+            # Check if group_emails exists
+            check_table = execute_query("SHOW TABLES LIKE 'group_emails'", fetch=True).get("data", [])
+            if check_table:
+                logging.info("Migrating data from group_emails to group_members...")
+                execute_query("""
+                    INSERT IGNORE INTO group_members (group_id, employee_id, added_at)
+                    SELECT ge.group_id, e.id, ge.added_at
+                    FROM group_emails ge
+                    JOIN employees e ON ge.email = e.email
+                """, commit=True)
+                logging.info("Migration completed successfully.")
+        except Exception as migration_error:
+            logging.warning(f"Data migration failed or group_emails table not found: {migration_error}")
+
+        logging.info("Group management tables initialized successfully")
+    except Exception as e:
+        logging.error(f"Error initializing group tables: {e}")
+
+# Initialize tables
+try:
+    init_groups_tables()
+except Exception as e:
+    logging.warning(f"Initial table check failed (might be DB connection issue): {e}")
+
 def format_datetime_for_client(dt):
     """
     Convert any datetime (naive or aware) to proper ISO format with Z
@@ -132,7 +176,6 @@ def format_datetime_for_client(dt):
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 
 # Cortex XDR API configuration
@@ -141,7 +184,10 @@ CORTEX_API_KEY_ID = os.getenv("CORTEX_API_KEY_ID")
 CORTEX_API_KEY = os.getenv("CORTEX_API_KEY")
 
 # Local directory for uploads
-UPLOAD_DIR = "hr_notification\\uploads"
+# Local directory for uploads
+# Use absolute path based on current file location to work on both local Windows and Linux server
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 VIDEO_DIR = os.path.join(UPLOAD_DIR, "message", "videos")
 IMAGE_DIR = os.path.join(UPLOAD_DIR, "message", "images")
 app.config['UPLOAD_FOLDER'] = UPLOAD_DIR
@@ -172,6 +218,14 @@ if not os.path.exists(UPLOAD_DIR):
 
 
 
+# Validate Supabase URL
+def validate_supabase_url(url):
+    try:
+        result = urllib.parse.urlparse(url)
+        return all([result.scheme == "https", result.netloc.endswith(".supabase.co")])
+    except ValueError:
+        return False
+
 # Verify file exists in local directory
 def verify_file(directory, filename):
     try:
@@ -180,8 +234,8 @@ def verify_file(directory, filename):
             logging.error(f"File not found: {file_path}")
             return False
         file_size = os.path.getsize(file_path)
-        if file_size <= 0:  # Only check if file is empty
-            logging.error(f"File is empty: {file_path}")
+        if file_size < 1024:  # Minimum size check (1KB)
+            logging.error(f"File too small: {file_path}, size: {file_size} bytes")
             return False
         logging.info(f"File verified: {file_path}, size: {file_size} bytes")
         return True
@@ -224,15 +278,6 @@ def login_required(f):
     return decorated_function
 
 
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('is_admin'):
-            return redirect(url_for('messages_page'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-
 def get_current_version():
     version_path = os.path.join(app.config['UPLOAD_FOLDER'], 'version.txt')
     try:
@@ -256,209 +301,22 @@ def serve_uploaded_file(filename):
         logging.error(f"Error serving file {file_path}: {str(e)}")
         return jsonify({"message": f"Error serving file: {str(e)}"}), 500
     
-@app.route('/login', methods=['GET'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    return render_template('login.html')
-
-
-@app.route('/ms_login')
-def ms_login():
-    # Build the MSAL ConfidentialClientApplication
-    ms_app = msal.ConfidentialClientApplication(
-        CLIENT_ID, authority=AUTHORITY,
-        client_credential=CLIENT_SECRET
-    )
-    
-    # Generate the auth URL
-    auth_url = ms_app.get_authorization_request_url(
-        SCOPE,
-        redirect_uri=url_for('callback', _external=True)
-    )
-    return redirect(auth_url)
-
-
-@app.route('/login_from_client')
-def login_from_client():
-    hostname = request.args.get('hostname')
-    if hostname:
-        session['register_hostname'] = hostname
-    return redirect(url_for('ms_login'))
-
-
-@app.route('/callback')
-def callback():
-    if not request.args.get('code'):
-        return "Error: No code in callback", 400
-    
-    ms_app = msal.ConfidentialClientApplication(
-        CLIENT_ID, authority=AUTHORITY,
-        client_credential=CLIENT_SECRET
-    )
-    
-    # Exchange code for token
-    result = ms_app.acquire_token_by_authorization_code(
-        request.args['code'],
-        scopes=SCOPE,
-        redirect_uri=url_for('callback', _external=True)
-    )
-    
-    if "error" in result:
-        logging.error(f"MS Auth Error: {result.get('error_description')}")
-        return f"Login failed: {result.get('error_description')}", 401
-
-    # Successful login
-    user_claims = result.get("id_token_claims")
-    session['logged_in'] = True
-    session['user_name'] = user_claims.get("name")
-    email = user_claims.get("preferred_username").lower()
-    session['user_email'] = email
-    
-    # Step 1: Link hostname if coming from client
-    reg_hostname = session.pop('register_hostname', None)
-    
-    # Step 2: Get or create employee
-    emp_res = execute_query("SELECT id FROM employees WHERE email = %s", (email,), fetch=True)
-    if emp_res.get("data"):
-        employee_id = emp_res["data"][0]['id']
-    else:
-        employee_id = str(uuid.uuid4())
-        execute_query("INSERT INTO employees (id, email) VALUES (%s, %s)", (employee_id, email), commit=True)
-    
-    session['employee_id'] = employee_id
-
-    # Step 3: If hostname provided, update device record
-    if reg_hostname:
-        execute_query("""
-            INSERT INTO employee_devices (employee_id, hostname, email, status, last_seen, app_running, active_status)
-            VALUES (%s, %s, %s, 'online', NOW(), 1, 0)
-            ON DUPLICATE KEY UPDATE
-                hostname = VALUES(hostname),
-                email = VALUES(email),
-                last_seen = VALUES(last_seen),
-                app_running = 1
-        """, (employee_id, reg_hostname, email), commit=True)
-        return render_template('login_success.html', hostname=reg_hostname)
-
-    # Check if this email has admin access
-    try:
-        admin_check = execute_query("SELECT id FROM admin_access WHERE email = %s", (email,), fetch=True)
-        if admin_check.get("data"):
-            session['is_admin'] = True
-            return redirect(url_for('home'))
-    except Exception as e:
-        logging.error(f"Error checking admin access: {e}")
-
-    session['is_admin'] = False
-    return redirect(url_for('messages_page'))
-
-
-@app.route('/manage_access', methods=['GET', 'POST'])
-@login_required
-@admin_required
-def manage_access():
     if request.method == 'POST':
-        action = request.form.get('action')
-        email = request.form.get('email', '').strip().lower()
-        
-        if action == 'add' and email:
-            try:
-                execute_query("INSERT IGNORE INTO admin_access (email) VALUES (%s)", (email,), commit=True)
-                flash(f"Access granted to {email}", "success")
-            except Exception as e:
-                flash(f"Error adding email: {str(e)}", "danger")
-        elif action == 'delete' and email:
-            try:
-                # Prevent deleting the main admin if necessary, but here we just follow user request
-                execute_query("DELETE FROM admin_access WHERE email = %s", (email,), commit=True)
-                flash(f"Access revoked for {email}", "success")
-            except Exception as e:
-                flash(f"Error removing email: {str(e)}", "danger")
-        return redirect(url_for('manage_access'))
-
-    try:
-        admins = execute_query("SELECT email, created_at FROM admin_access ORDER BY created_at DESC", fetch=True).get("data", [])
-        return render_template('manage_access.html', admins=admins)
-    except Exception as e:
-        logging.error(f"Error fetching admin list: {e}")
-        return render_template('home.html', error="Failed to load access list")
-
-
-@app.route('/check_registration', methods=['GET'])
-def check_registration():
-    hostname = request.args.get('hostname')
-    if not hostname:
-        return jsonify({"registered": False, "message": "No hostname provided"}), 400
-    
-    try:
-        # We look for a device that was updated in the last 10 minutes with this hostname
-        result = execute_query("""
-            SELECT employee_id, email, last_seen 
-            FROM employee_devices 
-            WHERE hostname = %s 
-            ORDER BY last_seen DESC 
-            LIMIT 1
-        """, (hostname,), fetch=True)
-        
-        data = result.get("data", [])
-        if data:
-            device = data[0]
-            # Since my previous callback set last_seen to NOW()
-            return jsonify({
-                "registered": True,
-                "employee_id": device['employee_id'],
-                "email": device['email']
-            })
-        
-        return jsonify({"registered": False})
-    except Exception as e:
-        return jsonify({"registered": False, "error": str(e)}), 500
-
-
-@app.route('/messages')
-@login_required
-def messages_page():
-    try:
-        # Fetch all messages from scheduled_content
-        contents_result = execute_query("""
-            SELECT id, title, text, image_url, url, scheduled_time, created_at 
-            FROM scheduled_content 
-            ORDER BY scheduled_time DESC
-        """, fetch=True)
-        contents = contents_result.get("data", []) or []
-        
-        formatted_messages = []
-        for c in contents:
-            # Format date
-            dt = c.get('scheduled_time') or c.get('created_at')
-            if dt:
-                if isinstance(dt, str):
-                    try:
-                        dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
-                    except:
-                        dt = datetime.now()
-                # Format to e.g. FEB 18, 2026
-                date_str = dt.strftime("%b %d, %Y")
-            else:
-                date_str = "Unknown Date"
-                
-            formatted_messages.append({
-                'id': c['id'],
-                'title': c['title'],
-                'text': c['text'],
-                'image_url': c['image_url'],
-                'url': c['url'],
-                'date': date_str
-            })
-            
-        return render_template('messages.html', messages=formatted_messages)
-    except Exception as e:
-        logging.error(f"Error in messages_page: {e}")
-        return render_template('home.html', error="Failed to load messages")
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if username == 'hracron@gmail.com' and password == 'hracron':
+            session['logged_in'] = True
+            return redirect(url_for('home'))
+        else:
+            return render_template('login.html', error="Invalid username or password")
+    return render_template('login.html')
 
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    session.pop('logged_in', None)
     return redirect(url_for('welcome'))
 
 
@@ -466,7 +324,6 @@ def logout():
 
 @app.route('/get_sent_messages')
 @login_required
-@admin_required
 def get_sent_messages():
     try:
         filter_type = request.args.get('filter', 'day')
@@ -524,8 +381,6 @@ def welcome():
 @app.route('/home')
 @login_required
 def home():
-    if not session.get('is_admin'):
-        return redirect(url_for('messages_page'))
     try:
         # 1. Total registered employees
         employees_response = execute_query("SELECT id FROM employees", fetch=True)
@@ -603,18 +458,13 @@ def home():
         end_idx = start_idx + items_per_page
         paginated_stats = content_stats[start_idx:end_idx]
 
-        # 4. Update Status Summary
-        update_summary_res = get_update_status_summary()
-        update_stats = update_summary_res.get_json() if hasattr(update_summary_res, 'get_json') else {}
-
         return render_template('home.html',
                               employee_count=employee_count,
                               active_devices=active_devices,
                               content_stats=content_stats,
                               paginated_stats=paginated_stats,
                               current_page=page,
-                              total_pages=total_pages,
-                              update_stats=update_stats)
+                              total_pages=total_pages)
 
     except Exception as e:
         logging.error(f"Error in home route: {str(e)}", exc_info=True)
@@ -629,7 +479,6 @@ def home():
                     
 @app.route('/get_paginated_stats')
 @login_required
-@admin_required
 def get_paginated_stats():
     try:
         # Fetch all scheduled content (ordered by time — most logical)
@@ -692,7 +541,6 @@ def get_paginated_stats():
 
 @app.route('/employees')
 @login_required
-@admin_required
 def get_employees():
     try:
         employees = execute_query("SELECT id, email FROM employees", fetch=True).get("data", []) or []
@@ -771,7 +619,7 @@ def update_status():
         # === CLIENT CANNOT CONTROL active_status ANYMORE ===
         update_data = {
             'employee_id': employee_id,
-            'status': data.get('status', 'offline'),
+            'status': 1 if data.get('status') == 'online' else 0,
             'app_running': data.get('app_running', False),
             'ip': data.get('ip'),
             'device_type': data.get('device_type'),
@@ -780,11 +628,30 @@ def update_status():
             'last_seen': datetime.now(timezone.utc).isoformat(),
         }
 
-        # Remove None values (safe because active_status not included)
-        update_data = {k: v for k, v in update_data.items() if v is not None}
+        # Keep all keys even if None, so pyformat named placeholders don't fail
+
+        # Ensure employee exists/resolve correct ID to prevent FK errors (1452)
+        email = data.get('email')
+        if email:
+            # Check if email already exists
+            existing_emp = execute_query("SELECT id FROM employees WHERE email = %s", (email,), fetch=True)
+            if existing_emp.get("data"):
+                # Use the EXISTING ID from database, overriding the client's one
+                # This fixes the case where Client ID != Server ID for same email
+                employee_id = existing_emp["data"][0]['id']
+                update_data['employee_id'] = employee_id  # Update the dict too
+            else:
+                # New email, ensure ID exists
+                try:
+                    execute_query(
+                        "INSERT IGNORE INTO employees (id, email) VALUES (%s, %s)",
+                        (employee_id, email),
+                        commit=True
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not auto-create employee: {e}")
 
         # CRITICAL: DO NOT TOUCH active_status in this route!
-        # Note: active_status is intentionally excluded — admin setting is preserved forever
         execute_query("""
             INSERT INTO employee_devices 
                 (employee_id, status, app_running, hostname, email, last_seen, ip, device_type)
@@ -798,186 +665,59 @@ def update_status():
                 last_seen = VALUES(last_seen),
                 ip = VALUES(ip),
                 device_type = VALUES(device_type)
+                -- active_status is NOT updated → admin setting preserved forever
         """, update_data, commit=True)
-        
-        # Old client compatibility: Record update device status if provided
+
+        # Optional: still update device_update_status table for app version tracking
         try:
+            server_version = get_current_version() or 'unknown'
             device_id = data.get('device_id', employee_id)
             current_version = data.get('current_version', 'unknown')
-            
-            # If standard heartbeat but no 'update_status' field, old clients treat 'success' if version matched
-            # 'pending' or 'failed' is sent explicitly from `report_update_status(...)`
-            server_version = get_current_version() or 'unknown'
-            update_state = data.get('update_status')
-            
-            if not update_state:
-                update_state = 'success' if current_version == server_version else 'pending'
-                
-            error_message = data.get('error_message') if update_state == 'failed' else None
-            
-            # Record it (similar to `/record_update_attempt`)
-            record_id = str(uuid.uuid4())
+
+            update_status_data = {
+                'id': str(uuid.uuid4()),
+                'employee_id': employee_id,
+                'device_id': device_id,
+                'version': current_version,
+                'status': 'success' if current_version == server_version else data.get('update_status', 'pending'),
+                'last_attempted_at': datetime.now(timezone.utc).isoformat(),
+                'error_message': data.get('error_message') if data.get('update_status') == 'failed' else None
+            }
+            # Keep all keys even if None, so pyformat named placeholders don't fail
+
             execute_query("""
                 INSERT INTO device_update_status 
-                    (id, employee_id, device_id, version, status, error_message, last_attempted_at)
+                    (id, employee_id, device_id, version, status, last_attempted_at, error_message)
                 VALUES 
-                    (%s, %s, %s, %s, %s, %s, NOW())
+                    (%(id)s, %(employee_id)s, %(device_id)s, %(version)s, %(status)s, %(last_attempted_at)s, %(error_message)s)
                 ON DUPLICATE KEY UPDATE
                     version = VALUES(version),
                     status = VALUES(status),
-                    error_message = VALUES(error_message),
-                    last_attempted_at = NOW()
-            """, (record_id, employee_id, device_id, current_version, update_state, error_message), commit=True)
+                    last_attempted_at = VALUES(last_attempted_at),
+                    error_message = VALUES(error_message)
+            """, update_status_data, commit=True)
         except Exception as e:
-            logging.warning(f"Failed to process old client update_status metrics (non-critical): {e}")
+            logging.warning(f"Failed to update device_update_status (non-critical): {e}")
 
-        logging.debug(f"Device status updated for {employee_id}")
-        return jsonify({'message': 'Status updated', 'active_status': 1})
+        logging.info(f"Heartbeat OK → employee {employee_id} | active_status preserved by admin preserved")
+        return jsonify({'message': 'Status updated successfully'}), 200
 
     except Exception as e:
-        logging.error(f"Error updating status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-# === New Endpoints for Update Status Tracking ===
-
-@app.route('/record_update_attempt', methods=['POST'])
-def record_update_attempt():
-    try:
-        data = request.get_json()
-        employee_id = data.get('employee_id', 'unknown')
-        device_id = data.get('device_id') or data.get('hostname')
-        version = data.get('version')
-        status = data.get('status') # 'pending', 'success', 'failed'
-        error_message = data.get('error_message')
-
-        if not all([device_id, version, status]):
-             return jsonify({'error': 'Missing required fields'}), 400
-
-        # Unique ID for the record (or update existing)
-        record_id = str(uuid.uuid4())
-
-        # Use INSERT ... ON DUPLICATE KEY UPDATE
-        # Note: The table device_update_status has a UNIQUE KEY on (employee_id, device_id)
-        # But wait, employee_id might be unknown or null if not logged in? 
-        # The schema says employee_id is NOT NULL. So we must have it.
-        # If the client is not logged in, we might have an issue.
-        # However, the client should send employee_id if possible.
-
-        execute_query("""
-            INSERT INTO device_update_status 
-                (id, employee_id, device_id, version, status, error_message, last_attempted_at)
-            VALUES 
-                (%s, %s, %s, %s, %s, %s, NOW())
-            ON DUPLICATE KEY UPDATE
-                version = VALUES(version),
-                status = VALUES(status),
-                error_message = VALUES(error_message),
-                last_attempted_at = NOW()
-        """, (record_id, employee_id, device_id, version, status, error_message), commit=True)
-
-        return jsonify({'message': 'Update attempt recorded'}), 200
-    except Exception as e:
-        logging.error(f"Error recording update attempt: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/update_status/summary', methods=['GET'])
-@login_required
-@admin_required
-def get_update_status_summary():
-    try:
-        server_version = get_current_version() or 'unknown'
-        
-        query = """
-            SELECT d1.status, d1.version 
-            FROM device_update_status d1
-            INNER JOIN (
-                SELECT employee_id, MAX(last_attempted_at) as max_time 
-                FROM device_update_status 
-                GROUP BY employee_id
-            ) d2 ON d1.employee_id = d2.employee_id AND d1.last_attempted_at = d2.max_time
-        """
-        response = execute_query(query, fetch=True)
-        
-        successful = 0
-        pending = 0
-        failed = 0
-        
-        for record in response.get("data", []):
-            if record['status'] == 'failed':
-                failed += 1
-            elif record['version'] == server_version:
-                successful += 1
-            else:
-                # If status is 'pending' OR 'success' but version is old
-                pending += 1
-                
-        return jsonify({
-            'successful': successful,
-            'pending': pending,
-            'failed': failed,
-            'latest_version': server_version
-        })
-    except Exception as e:
-        logging.error(f"Error fetching update summary: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/update_status/all', methods=['GET'])
-@login_required
-@admin_required
-def get_all_update_statuses():
-    try:
-        query = """
-            SELECT 
-                COALESCE(e.email, ed.email, d1.employee_id) AS email,
-                d1.device_id, 
-                d1.version, 
-                d1.status, 
-                d1.last_attempted_at, 
-                d1.error_message 
-            FROM device_update_status d1
-            LEFT JOIN employees e ON d1.employee_id = e.id
-            LEFT JOIN employee_devices ed ON d1.employee_id = ed.employee_id
-            INNER JOIN (
-                SELECT employee_id, MAX(last_attempted_at) as max_time 
-                FROM device_update_status 
-                GROUP BY employee_id
-            ) d2 ON d1.employee_id = d2.employee_id AND d1.last_attempted_at = d2.max_time
-            ORDER BY d1.last_attempted_at DESC
-        """
-        result = execute_query(query, fetch=True)
-        
-        rows = result.get('data', [])
-        for row in rows:
-            if row.get('last_attempted_at'):
-                row['last_attempted_at'] = row['last_attempted_at'].isoformat()
-        
-        return jsonify(rows)
-    except Exception as e:
-        logging.error(f"Error fetching all update statuses: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-
+        logging.error(f"Error in update_status: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Server error'}), 500
             
 # Updated /upload_version
 @app.route('/upload_version', methods=['GET', 'POST'])
 @login_required
-@admin_required
 def upload_version():
     current_version = get_current_version()
     if request.method == 'GET':
-        history_result = execute_query("SELECT version, uploaded_at, uploaded_by FROM version_history ORDER BY uploaded_at DESC", fetch=True)
-        version_history = history_result.get("data", [])
-        return render_template('upload_version.html', current_version=current_version, version_history=version_history)
+        return render_template('upload_version.html', current_version=current_version)
 
 
     if 'version_file' not in request.files or 'exe_file' not in request.files:
         logger.error("Missing version_file or exe_file")
-        history_result = execute_query("SELECT version, uploaded_at, uploaded_by FROM version_history ORDER BY uploaded_at DESC", fetch=True)
-        version_history = history_result.get("data", [])
-        return render_template('upload_version.html', error="Both version.txt and app.exe are required.", current_version=current_version, version_history=version_history)
+        return render_template('upload_version.html', error="Both version.txt and app.exe are required.", current_version=current_version)
 
 
     version_file = request.files['version_file']
@@ -986,9 +726,7 @@ def upload_version():
 
     if not version_file.filename.endswith('.txt') or not exe_file.filename.endswith('.exe'):
         logger.error("Invalid file types uploaded")
-        history_result = execute_query("SELECT version, uploaded_at, uploaded_by FROM version_history ORDER BY uploaded_at DESC", fetch=True)
-        version_history = history_result.get("data", [])
-        return render_template('upload_version.html', error="Invalid file types. Upload version.txt and app.exe.", current_version=current_version, version_history=version_history)
+        return render_template('upload_version.html', error="Invalid file types. Upload version.txt and app.exe.", current_version=current_version)
 
 
     version_path = os.path.join(app.config['UPLOAD_FOLDER'], 'version.txt')
@@ -1011,28 +749,18 @@ def upload_version():
                 logger.error(f"Invalid version format: {new_version}")
                 os.remove(temp_version_path)
                 os.remove(temp_exe_path)
-                history_result = execute_query("SELECT version, uploaded_at, uploaded_by FROM version_history ORDER BY uploaded_at DESC", fetch=True)
-                version_history = history_result.get("data", [])
-                return render_template('upload_version.html', error="Invalid version format.", current_version=current_version, version_history=version_history)
+                return render_template('upload_version.html', error="Invalid version format.", current_version=current_version)
 
 
-        # Move files to final location (Live version)
-        shutil.copy2(temp_version_path, version_path)
-        shutil.copy2(temp_exe_path, exe_path)
-
-        # Also save to backups
-        backup_dir = os.path.join(app.config['UPLOAD_FOLDER'], "backups")
-        if not os.path.exists(backup_dir):
-            os.makedirs(backup_dir)
-        
-        shutil.move(temp_version_path, os.path.join(backup_dir, f"version_{new_version}.txt"))
-        shutil.move(temp_exe_path, os.path.join(backup_dir, f"app_{new_version}.exe"))
+        # Move files to final location
+        shutil.move(temp_version_path, version_path)
+        shutil.move(temp_exe_path, exe_path)
 
 
         # Verify files were saved
         if not os.path.exists(version_path) or not os.path.exists(exe_path):
             logger.error("Failed to save version file or app executable")
-            return render_template('upload_version.html', error="Failed to save files.", current_version=current_version, version_history=[])
+            return render_template('upload_version.html', error="Failed to save files.", current_version=current_version)
 
 
         # Clear old pending/failed statuses
@@ -1041,22 +769,11 @@ def upload_version():
             WHERE status IS NULL OR status != 'success'
         """, commit=True)
 
-        # Record in version history
-        execute_query("""
-            INSERT INTO version_history (version, uploaded_at, uploaded_by)
-            VALUES (%s, NOW(), %s)
-            ON DUPLICATE KEY UPDATE uploaded_at = NOW(), uploaded_by = %s
-        """, (new_version, session.get('user_email', 'unknown'), session.get('user_email', 'unknown')), commit=True)
-
         logger.info(f"New version {new_version} uploaded by {session.get('user_email', 'unknown')}")
-        
-        history_result = execute_query("SELECT version, uploaded_at, uploaded_by FROM version_history ORDER BY uploaded_at DESC", fetch=True)
-        version_history = history_result.get("data", [])
-        
-        return render_template('upload_version.html', success="Version uploaded successfully.", current_version=new_version, version_history=version_history)
+        return render_template('upload_version.html', success="Version uploaded successfully.", current_version=new_version)
     except Exception as e:
         logger.error(f"Error uploading version: {str(e)}")
-        return render_template('upload_version.html', error=f"Error uploading version: {str(e)}", current_version=current_version, version_history=[])
+        return render_template('upload_version.html', error=f"Error uploading version: {str(e)}", current_version=current_version)
     finally:
         # Clean up temporary files if they exist
         for temp_file in [temp_version_path, temp_exe_path]:
@@ -1065,7 +782,6 @@ def upload_version():
 
 @app.route('/delete_version', methods=['POST'])
 @login_required
-@admin_required
 def delete_version():
     data = request.get_json()
     version = data.get('version')
@@ -1090,41 +806,38 @@ def delete_version():
     except Exception as e:
         logger.error(f"Delete failed: {e}")
         return jsonify({"error": str(e)}), 500
-
-@app.route('/download_version/<version>', methods=['GET'])
-@login_required
-@admin_required
-def download_version(version):
-    """Serve a specific backup version of the app.exe."""
-    try:
-        backup_dir = os.path.join(app.config['UPLOAD_FOLDER'], "backups")
-        exe_filename = f"app_{version}.exe"
-        exe_path = os.path.join(backup_dir, exe_filename)
-        
-        # Check if it exists in backups
-        if not os.path.exists(exe_path):
-            # Fallback: if it's the current version, it might be in the main upload folder
-            current_v = get_current_version()
-            if version == current_v:
-                exe_path = os.path.join(app.config['UPLOAD_FOLDER'], 'app.exe')
-                # We still want to give it the versioned name for the user
-        
-        if not os.path.exists(exe_path):
-            logger.error(f"Version backup not found: {exe_path}")
-            return jsonify({'error': f'Version {version} backup not found'}), 404
-
-        logger.info(f"Serving backup version {version}: {exe_path}")
-        return send_file(exe_path, as_attachment=True, download_name=exe_filename)
-    except Exception as e:
-        logger.error(f"Error serving backup version {version}: {str(e)}")
-        return jsonify({'error': str(e)}), 500
     
+@app.route('/update_status/summary', methods=['GET'])
+@login_required
+def update_status_summary():
+    try:
+        response = execute_query("SELECT status FROM device_update_status")
+        status_counts = defaultdict(int)
+        for record in response.get("data", []):
+            status_counts[record['status']] += 1
+        return jsonify({
+            'successful': status_counts['success'],
+            'pending': status_counts['pending'],
+            'failed': status_counts['failed']
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching update status summary: {e}")
+        return jsonify({'error': str(e)}), 500
 
+
+@app.route('/update_status/all', methods=['GET'])
+@login_required
+def update_status_all():
+    try:
+        response = execute_query("SELECT employee_id, device_id, version, status, last_attempted_at, error_message FROM device_update_status")
+        return jsonify(response.get("data", [])), 200
+    except Exception as e:
+        logger.error(f"Error fetching all update statuses: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/update_status/success', methods=['GET'])
 @login_required
-@admin_required
 def update_status_success():
     try:
         response = execute_query("SELECT employee_id, device_id, version, last_attempted_at FROM device_update_status WHERE status = 'success'")
@@ -1136,7 +849,6 @@ def update_status_success():
 
 @app.route('/update_status/pending', methods=['GET'])
 @login_required
-@admin_required
 def update_status_pending():
     try:
         response = execute_query("SELECT employee_id, device_id, version, last_attempted_at FROM device_update_status WHERE status = 'pending'")
@@ -1148,7 +860,6 @@ def update_status_pending():
 
 @app.route('/update_status/failed', methods=['GET'])
 @login_required
-@admin_required
 def update_status_failed():
     try:
         response = execute_query("SELECT employee_id, device_id, version, last_attempted_at, error_message FROM device_update_status WHERE status = 'failed'")
@@ -1160,7 +871,6 @@ def update_status_failed():
 
 @app.route('/check_upload_readiness', methods=['GET'])
 @login_required
-@admin_required
 def check_upload_readiness():
     try:
         total, used, free = shutil.disk_usage(app.config['UPLOAD_FOLDER'])
@@ -1175,7 +885,6 @@ def check_upload_readiness():
         
 @app.route('/view_reactions/<content_id>')
 @login_required
-@admin_required
 def view_reactions(content_id):
     try:
         # Fixed: Select 'url', not 'image_url' twice!
@@ -1272,14 +981,13 @@ def view_reactions(content_id):
 
 @app.route('/send_message')
 @login_required
-@admin_required
 def send_message_page():
     try:
         # FIXED: Added fetch=True
         active_devices_result = execute_query("""
             SELECT employee_id 
             FROM employee_devices 
-            WHERE status = 1
+            WHERE active_status = 1
         """, fetch=True)
 
         active_employee_ids = [
@@ -1333,15 +1041,25 @@ def send_message_page():
         employees_json = json.dumps(employees_data)
         departments = sorted(departments)
 
-        # Get available groups
-        groups_res = execute_query("SELECT id, name FROM groups ORDER BY name", fetch=True)
-        groups = groups_res.get("data", []) or []
+        # Fetch groups
+        groups_result = execute_query("SELECT id, name FROM `groups` ORDER BY name ASC", fetch=True)
+        groups = groups_result.get("data", [])
+
+        # Mapping for groups: group_id -> list of employee_ids
+        group_members = execute_query("SELECT group_id, employee_id FROM group_members", fetch=True).get("data", [])
+        group_map = {}
+        for gm in group_members:
+            gid = gm['group_id']
+            if gid not in group_map:
+                group_map[gid] = []
+            group_map[gid].append(gm['employee_id'])
 
         return render_template('send_message.html', 
                              employees_json=employees_json, 
                              active_employees=employees, 
                              departments=departments,
-                             groups=groups)
+                             groups=groups,
+                             group_map_json=json.dumps(group_map))
 
     except mysql.connector.Error as e:
         logging.error(f"MySQL error in send_message_page: {e}")
@@ -1361,7 +1079,6 @@ def send_message_page():
 
 @app.route('/cortex_logs')
 @login_required
-@admin_required
 def cortex_logs():
     try:
         headers = {
@@ -1423,7 +1140,6 @@ def cortex_logs():
 
 @app.route('/monitor_devices')
 @login_required
-@admin_required
 def monitor_devices():
     try:
             # Fetch devices from Supabase
@@ -1547,9 +1263,9 @@ def monitor_devices():
             })
 
 
-        # Split devices
-        active_devices = [d for d in processed_devices if d['status']]
-        inactive_devices = [d for d in processed_devices if not d['status']]
+        # Split devices by manual active_status (1 = Activated, 0 = Deactivated)
+        active_devices = [d for d in processed_devices if d['active_status']]
+        inactive_devices = [d for d in processed_devices if not d['active_status']]
       
 
 
@@ -1570,23 +1286,12 @@ def monitor_devices():
                     
 @app.route('/send_message', methods=['POST'])
 @login_required
-@admin_required
 def send_message():
     try:
         logging.debug(f"Received send_message data: {dict(request.form)}, files: {request.files}")
-        
-        # Log individual fields for debugging
-        title = request.form.get('title')
-        text = request.form.get('text')
-        send_now_val = request.form.get('send_now')
-        scheduled_time_val = request.form.get('scheduled_time')
-        employees_list = request.form.getlist('employees')
-        
-        logging.debug(f"Parsed fields - Title: {title}, Text: {text}, Send Now: {send_now_val}, Scheduled: {scheduled_time_val}, Recipients Count: {len(employees_list)}")
-
-        if not title or not text or (not send_now_val and not scheduled_time_val) or not employees_list:
-            logging.error(f"Missing required fields. Title: {bool(title)}, Text: {bool(text)}, Schedule: {bool(send_now_val or scheduled_time_val)}, Employees: {bool(employees_list)}")
-            return jsonify({"message": "Please ensure all fields (Title, Message, Audience) are correctly filled out."}), 400
+        if 'title' not in request.form or 'text' not in request.form or ('send_now' not in request.form and 'scheduled_time' not in request.form) or not request.form.getlist('employees'):
+            logging.error("Missing required fields in send_message: title, text, send_now or scheduled_time, or employees")
+            return jsonify({"message": "Missing required fields: title, text, send_now or scheduled_time, or employees"}), 400
         
         title = request.form['title'].strip()
         if len(title) > 100:
@@ -1746,7 +1451,6 @@ def send_message():
     
 @app.route('/update_bulk_device_status', methods=['POST'])
 @login_required
-@admin_required
 def update_bulk_device_status():
     try:
         data = request.json
@@ -1760,7 +1464,9 @@ def update_bulk_device_status():
         for update in data:
             employee_id = update.get('employee_id')
             
-            active_status = update.get('active_status')
+            # Look for 'status' (consistent with frontend) or 'active_status'
+            active_status = update.get('status') if update.get('status') is not None else update.get('active_status')
+            
             logging.debug(f"Processing update for employee_id: {employee_id}, active_status: {active_status}")
             if not employee_id or active_status is None:
                 logging.error(f"Missing required fields for employee_id: {employee_id}")
@@ -1858,11 +1564,6 @@ def get_content(employee_id):
         logging.debug(f"Fetching content for employee_id: {employee_id}")
 
         # Get content visible to this employee and already scheduled
-        # FIRST: Verify employee exists
-        emp_check = execute_query("SELECT id FROM employees WHERE id = %s", (employee_id,), fetch=True)
-        if not emp_check.get("data"):
-            return jsonify({"message": "User not found"}), 404
-
         content_result = execute_query("""
             SELECT id, type, title, text, image_url, url, scheduled_time, employees
             FROM scheduled_content
@@ -1873,38 +1574,12 @@ def get_content(employee_id):
 
         employee_content = content_result.get("data", []) or []
 
-        # CRITICAL FIX: Format scheduled_time properly and fetch reactions
+        # CRITICAL FIX: Format scheduled_time properly for client
         for item in employee_content:
             if item['scheduled_time']:
                 item['scheduled_time'] = format_datetime_for_client(item['scheduled_time'])
             else:
                 item['scheduled_time'] = None
-
-            # Fetch reaction counts for this content
-            reaction_counts_res = execute_query("""
-                SELECT reaction, COUNT(*) as count 
-                FROM reactions 
-                WHERE content_id = %s 
-                GROUP BY reaction
-            """, (item['id'],), fetch=True)
-            
-            counts_list = reaction_counts_res.get("data", [])
-            counts_map = {r['reaction']: r['count'] for r in counts_list}
-            item['reaction_counts'] = {
-                'like': counts_map.get('like', 0),
-                'unlike': counts_map.get('unlike', 0),
-                'heart': counts_map.get('heart', 0),
-                'cry': counts_map.get('cry', 0)
-            }
-            
-            # Fetch current user's specific reaction (if any)
-            user_reaction_res = execute_query("""
-                SELECT reaction FROM reactions 
-                WHERE content_id = %s AND employee_id = %s 
-                LIMIT 1
-            """, (item['id'], employee_id), fetch=True)
-            user_react_data = user_reaction_res.get("data", [])
-            item['user_reaction'] = user_react_data[0]['reaction'] if user_react_data else None
 
         # Notifications (last 7 days)
         notif_result = execute_query("""
@@ -1937,7 +1612,6 @@ def get_content(employee_id):
                     
 @app.route('/devices')
 @login_required
-@admin_required
 def devices():
     try:
         devices = execute_query("SELECT * FROM employee_devices ORDER BY last_seen DESC", fetch=True).get("data", []) or []
@@ -2013,13 +1687,11 @@ def register_device():
         if email:
             device_data_base["email"] = email
         
-        exists = execute_query("SELECT active_status FROM employee_devices WHERE employee_id = %s", (employee_id,), fetch=True).get("data", []) or []
-        if not exists:
-            device_data_base["active_status"] = False
-        
+        # CRITICAL: We only set active_status=0 for NEW devices. 
+        # For existing devices, we MUST NOT touch active_status here as it is managed manually by admin.
         execute_query("""
             INSERT INTO employee_devices (employee_id, ip, device_type, hostname, email, status, last_seen, app_running, active_status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
             ON DUPLICATE KEY UPDATE
                 ip = VALUES(ip),
                 device_type = VALUES(device_type),
@@ -2027,18 +1699,17 @@ def register_device():
                 email = VALUES(email),
                 status = VALUES(status),
                 last_seen = VALUES(last_seen),
-                app_running = VALUES(app_running),
-                active_status = VALUES(active_status)
+                app_running = VALUES(app_running)
+                -- active_status is NOT updated here to preserve manual admin settings
         """, (
             employee_id,
-            device_data_base.get("ip"),
-            device_data_base.get("device_type"),
-            device_data_base.get("hostname"),
-            device_data_base.get("email"),
-            device_data_base.get("status"),
-            device_data_base.get("last_seen"),
-            device_data_base.get("app_running"),
-            device_data_base.get("active_status")
+            data.get("ip"),
+            data.get("device_type"),
+            data.get("hostname"),
+            data.get("email"),
+            1,
+            datetime.now(timezone.utc).isoformat(),
+            True
         ), commit=True)
         logging.info(f"Device registered/updated: {employee_id}, hostname: {hostname}, email: {email}")
         return jsonify({"message": "Device registered"})
@@ -2488,211 +2159,165 @@ def get_content_views(content_id):
     except Exception as e:
         logging.error(f"Unexpected error fetching views for content {content_id}: {str(e)}")
         return jsonify({"message": f"Unexpected error: {str(e)}", "views": []}), 500
+     
 
-@app.route('/manage_groups', methods=['GET', 'POST'])
+# --- Group Management Routes ---
+
+@app.route('/group_management')
 @login_required
-@admin_required
-def manage_groups():
-    if request.method == 'POST':
+def group_management():
+    try:
+        # Get groups and count of members in each
+        query = """
+            SELECT g.id, g.name, g.description, COUNT(gm.employee_id) as member_count
+            FROM `groups` g
+            LEFT JOIN group_members gm ON g.id = gm.group_id
+            GROUP BY g.id
+        """
+        groups = execute_query(query, fetch=True).get("data", [])
+        return render_template('group_management.html', groups=groups)
+    except Exception as e:
+        logging.error(f"Error in group_management: {e}")
+        return render_template('group_management.html', groups=[], error=str(e))
+
+@app.route('/create_group', methods=['POST'])
+@login_required
+def create_group():
+    try:
         name = request.form.get('name')
         description = request.form.get('description')
         if not name:
-            flash("Group name is required!", "danger")
-        else:
-            group_id = str(uuid.uuid4())
-            try:
-                execute_query("INSERT INTO groups (id, name, description) VALUES (%s, %s, %s)", 
-                              (group_id, name, description), commit=True)
-                flash(f"Group '{name}' created successfully!", "success")
-            except Exception as e:
-                logging.error(f"Error creating group: {e}")
-                flash("Error creating group.", "danger")
-        return redirect(url_for('manage_groups'))
-
-    try:
-        groups_res = execute_query("SELECT * FROM groups ORDER BY created_at DESC", fetch=True)
-        groups = groups_res.get("data", []) or []
+            return redirect(url_for('group_management', error="Group name is required"))
         
-        # Get member counts for each group
-        for group in groups:
-            count_res = execute_query("SELECT COUNT(*) as count FROM group_members WHERE group_id = %s", (group['id'],), fetch=True)
-            group['member_count'] = count_res.get("data", [{}])[0].get("count", 0)
-            
-        return render_template('manage_groups.html', groups=groups)
+        execute_query(
+            "INSERT INTO `groups` (name, description) VALUES (%s, %s)",
+            (name, description),
+            commit=True
+        )
+        return redirect(url_for('group_management'))
     except Exception as e:
-        logging.error(f"Error fetching groups: {e}")
-        return render_template('home.html', error="Failed to load groups list")
+        logging.error(f"Error creating group: {e}")
+        return redirect(url_for('group_management', error=str(e)))
 
-@app.route('/delete_group/<group_id>', methods=['POST'])
+@app.route('/edit_group/<int:group_id>')
 @login_required
-@admin_required
-def delete_group(group_id):
-    try:
-        execute_query("DELETE FROM groups WHERE id = %s", (group_id,), commit=True)
-        flash("Group deleted successfully!", "success")
-    except Exception as e:
-        logging.error(f"Error deleting group: {e}")
-        flash("Error deleting group.", "danger")
-    return redirect(url_for('manage_groups'))
-
-@app.route('/edit_group/<group_id>')
-@login_required
-@admin_required
 def edit_group(group_id):
     try:
-        group_res = execute_query("SELECT * FROM groups WHERE id = %s", (group_id,), fetch=True)
-        group_data = group_res.get("data")
-        if not group_data:
-            flash("Group not found.", "danger")
-            return redirect(url_for('manage_groups'))
+        group_res = execute_query("SELECT * FROM `groups` WHERE id = %s", (group_id,), fetch=True).get("data", [])
+        if not group_res:
+            return redirect(url_for('group_management', error="Group not found"))
         
-        group = group_data[0]
+        # Get current group members with emails for display
+        members = execute_query("""
+            SELECT gm.*, e.email 
+            FROM group_members gm
+            JOIN employees e ON gm.employee_id = e.id
+            WHERE gm.group_id = %s 
+            ORDER BY e.email ASC
+        """, (group_id,), fetch=True).get("data", [])
         
-        # Get current members
-        members_res = execute_query("""
-            SELECT e.id, e.email 
-            FROM employees e 
-            JOIN group_members gm ON e.id = gm.employee_id 
-            WHERE gm.group_id = %s
-        """, (group_id,), fetch=True)
-        members = members_res.get("data", []) or []
-        
-        # Get current member IDs to filter them out of recruitment
-        member_ids = [m['id'] for m in members]
-        
-        # Get all ACTIVE employees (approved in Device Monitor) who are NOT ALREADY in this group
-        if member_ids:
-            placeholders = ','.join(['%s'] * len(member_ids))
-            query = f"""
-                SELECT DISTINCT e.id, e.email 
-                FROM employees e
-                JOIN employee_devices ed ON e.id = ed.employee_id
-                WHERE ed.active_status = 1 AND e.id NOT IN ({placeholders})
-                ORDER BY e.email
-            """
-            all_employees_res = execute_query(query, tuple(member_ids), fetch=True)
-        else:
-            all_employees_res = execute_query("""
-                SELECT DISTINCT e.id, e.email 
-                FROM employees e
-                JOIN employee_devices ed ON e.id = ed.employee_id
-                WHERE ed.active_status = 1
-                ORDER BY e.email
-            """, fetch=True)
-            
-        all_employees = all_employees_res.get("data", []) or []
-        
-        return render_template('edit_group.html', group=group, members=members, all_employees=all_employees)
+        # Fetch available employees (active_status = 1) not already in this group
+        available_employees = execute_query("""
+            SELECT DISTINCT e.id, e.email 
+            FROM employees e
+            JOIN employee_devices ed ON e.id = ed.employee_id
+            WHERE ed.active_status = 1 
+            AND e.id NOT IN (SELECT employee_id FROM group_members WHERE group_id = %s)
+            ORDER BY e.email ASC
+        """, (group_id,), fetch=True).get("data", [])
+
+        return render_template('edit_group.html', 
+                               group=group_res[0], 
+                               members=members, 
+                               available_employees=available_employees)
     except Exception as e:
         logging.error(f"Error in edit_group: {e}")
-        return redirect(url_for('manage_groups'))
+        return redirect(url_for('group_management', error=str(e)))
 
-@app.route('/add_group_member', methods=['POST'])
+@app.route('/add_multiple_members_to_group', methods=['POST'])
 @login_required
-@admin_required
-def add_group_member():
-    data = request.json
-    group_id = data.get('group_id')
-    employee_id = data.get('employee_id')
-    
-    if not group_id or not employee_id:
-        return jsonify({"success": False, "message": "Missing data"}), 400
+def add_multiple_members_to_group():
+    group_id = request.form.get('group_id')
+    employee_ids = request.form.getlist('employee_ids')
+    try:
+        if not group_id or not employee_ids:
+            return redirect(url_for('edit_group', group_id=group_id))
         
-    try:
-        execute_query("INSERT IGNORE INTO group_members (group_id, employee_id) VALUES (%s, %s)", 
-                      (group_id, employee_id), commit=True)
-        return jsonify({"success": True})
+        for emp_id in employee_ids:
+            execute_query(
+                "INSERT IGNORE INTO group_members (group_id, employee_id) VALUES (%s, %s)",
+                (group_id, emp_id),
+                commit=True
+            )
+        return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error adding group member: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        logging.error(f"Error adding multiple members: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
-@app.route('/remove_group_member', methods=['POST'])
+@app.route('/delete_group/<int:group_id>', methods=['POST'])
 @login_required
-@admin_required
-def remove_group_member():
-    data = request.json
-    group_id = data.get('group_id')
-    employee_id = data.get('employee_id')
-    
-    if not group_id or not employee_id:
-        return jsonify({"success": False, "message": "Missing data"}), 400
+def delete_group(group_id):
+    try:
+        # emails will be deleted by ON DELETE CASCADE if configured
+        execute_query("DELETE FROM `groups` WHERE id = %s", (group_id,), commit=True)
+        return redirect(url_for('group_management'))
+    except Exception as e:
+        logging.error(f"Error deleting group: {e}")
+        return redirect(url_for('group_management', error=str(e)))
+
+@app.route('/search_emails_ajax')
+@login_required
+def search_emails_ajax():
+    q = request.args.get('q', '')
+    if not q:
+        return jsonify([])
+    try:
+        # Search employees by email prefix/contains
+        query = "SELECT email FROM employees WHERE email LIKE %s LIMIT 10"
+        results = execute_query(query, ('%' + q + '%',), fetch=True).get("data", [])
+        return jsonify(results)
+    except Exception as e:
+        logging.error(f"Error searching emails: {e}")
+        return jsonify([])
+
+@app.route('/add_member_to_group', methods=['POST'])
+@login_required
+def add_member_to_group():
+    group_id = request.form.get('group_id')
+    employee_id = request.form.get('employee_id')
+    try:
+        if not group_id or not employee_id:
+            return redirect(url_for('group_management'))
         
-    try:
-        execute_query("DELETE FROM group_members WHERE group_id = %s AND employee_id = %s", 
-                      (group_id, employee_id), commit=True)
-        return jsonify({"success": True})
-    except Exception as e:
-        logging.error(f"Error removing group member: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-@app.route('/bulk_remove_group_members', methods=['POST'])
-@login_required
-@admin_required
-def bulk_remove_group_members():
-    data = request.json
-    group_id = data.get('group_id')
-    employee_ids = data.get('employee_ids')
-    
-    if not group_id or not employee_ids:
-        return jsonify({"success": False, "message": "Missing data"}), 400
+        # Check if already exists
+        exists = execute_query(
+            "SELECT 1 FROM group_members WHERE group_id = %s AND employee_id = %s",
+            (group_id, employee_id),
+            fetch=True
+        ).get("data", [])
         
-    try:
-        # Use executemany for efficiency
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        query = "DELETE FROM group_members WHERE group_id = %s AND employee_id = %s"
-        params = [(group_id, emp_id) for emp_id in employee_ids]
-        cursor.executemany(query, params)
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return jsonify({"success": True})
+        if not exists:
+            execute_query(
+                "INSERT INTO group_members (group_id, employee_id) VALUES (%s, %s)",
+                (group_id, employee_id),
+                commit=True
+            )
+        return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error in bulk removal: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        logging.error(f"Error adding member to group: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
-@app.route('/bulk_add_group_members', methods=['POST'])
+@app.route('/remove_member_from_group', methods=['POST'])
 @login_required
-@admin_required
-def bulk_add_group_members():
-    data = request.json
-    group_id = data.get('group_id')
-    employee_ids = data.get('employee_ids')
-    
-    if not group_id or not employee_ids:
-        return jsonify({"success": False, "message": "Missing data"}), 400
-        
+def remove_member_from_group():
+    group_id = request.form.get('group_id')
+    employee_id = request.form.get('employee_id')
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # Using INSERT IGNORE to prevent errors if a member is already in the group
-        query = "INSERT IGNORE INTO group_members (group_id, employee_id) VALUES (%s, %s)"
-        params = [(group_id, emp_id) for emp_id in employee_ids]
-        cursor.executemany(query, params)
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return jsonify({"success": True})
+        execute_query("DELETE FROM group_members WHERE group_id = %s AND employee_id = %s", (group_id, employee_id), commit=True)
+        return redirect(url_for('edit_group', group_id=group_id))
     except Exception as e:
-        logging.error(f"Error in bulk addition: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-@app.route('/get_group_members/<group_id>')
-@login_required
-@admin_required
-def get_group_members(group_id):
-    try:
-        members_res = execute_query("""
-            SELECT employee_id 
-            FROM group_members 
-            WHERE group_id = %s
-        """, (group_id,), fetch=True)
-        member_ids = [m['employee_id'] for m in members_res.get("data", [])]
-        return jsonify({"success": True, "employee_ids": member_ids})
-    except Exception as e:
-        logging.error(f"Error fetching group members: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        logging.error(f"Error removing member: {e}")
+        return redirect(url_for('edit_group', group_id=group_id, error=str(e)))
 
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
-
