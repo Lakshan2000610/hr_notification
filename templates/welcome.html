@@ -48,6 +48,49 @@
         transform: translate3d(85px, 0, 0);
       }
     }
+
+    /* Advanced Blur Slide & Hide Animation */
+    .reveal-img-container {
+      position: relative;
+      overflow: visible; /* to allow moving outside container */
+    }
+    
+    .reveal-layer-1 {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 15;
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      filter: blur(0px);
+      transition: transform 1.5s cubic-bezier(0.645, 0.045, 0.355, 1), filter 1.5s cubic-bezier(0.645, 0.045, 0.355, 1), opacity 1.5s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+
+    .reveal-layer-2 {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 5;
+      opacity: 0;
+      transform: scale(0.95);
+      transition: transform 1.5s cubic-bezier(0.645, 0.045, 0.355, 1), opacity 1.5s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+
+    /* Transition triggered by JS after 3s */
+    .hero-animated-reveal .reveal-layer-1 {
+      transform: translateX(-145%) scale(0.85);
+      filter: blur(25px);
+      opacity: 0;
+    }
+
+    .hero-animated-reveal .reveal-layer-2 {
+      opacity: 1;
+      transform: scale(1);
+    }
   </style>
 </head>
 
@@ -97,7 +140,7 @@
   <section class="relative overflow-hidden">
     <div class="container mx-auto px-6 py-20 md:py-32">
       <div class="grid md:grid-cols-2 gap-12 items-center">
-        <div class="space-y-6">
+        <div class="space-y-6 relative z-20 bg-transparent">
           <h1 class="leading-tight" style="font-size:52px;font-weight:700">AcornHUB — Smart & Simple Company
             Notifications</h1>
           <p class="opacity-80" style="font-size:18px;line-height:1.7">Instant company news, reactions, scheduling, and
@@ -126,8 +169,19 @@
           <div
             class="absolute -bottom-10 -left-10 w-48 h-48 bg-gradient-to-br from-[#B6A3D8] to-[#7F5FCF] rounded-full opacity-30 blur-3xl">
           </div>
-          <img src="../static/images/ui.png" alt="AcornHUB Mockup"
-            class="rounded-2xl shadow-2xl border border-[rgba(0,0,0,0.08)] relative z-10" />
+          
+          <div class="relative rounded-2xl shadow-2xl border border-[rgba(0,0,0,0.08)] bg-white reveal-img-container" id="hero-image-slider">
+            <!-- base invisible placeholder to preserve layout/dimensions -->
+            <img src="../static/images/ui3.png" alt="AcornHUB Mockup" class="opacity-0 w-full h-auto select-none pointer-events-none rounded-2xl" />
+            
+            <!-- final image (layer 2 - underneath) -->
+            <img src="../static/images/ui.png" alt="AcornHUB Mockup"
+              class="reveal-layer-2 rounded-2xl" />
+              
+            <!-- initial image (layer 1 - on top with animation) -->
+            <img src="../static/images/ui3.png" alt="AcornHUB Mockup"
+              class="reveal-layer-1 rounded-2xl" />
+          </div>
 
         </div>
       </div>
@@ -496,6 +550,14 @@
     // Update Year
     const yearSpan = document.getElementById('year');
     if (yearSpan) yearSpan.textContent = new Date().getFullYear();
+
+    // Hero Image Slider Animation after 3 seconds
+    setTimeout(() => {
+      const slider = document.getElementById('hero-image-slider');
+      if (slider) {
+        slider.classList.add('hero-animated-reveal');
+      }
+    }, 3000);
   </script>
 </body>
 
