@@ -780,8 +780,10 @@ def update_status():
             'last_seen': datetime.now(timezone.utc).isoformat(),
         }
 
-        # Remove None values (safe because active_status not included)
-        update_data = {k: v for k, v in update_data.items() if v is not None}
+        # Ensure all required placeholders are available
+        for key in ['ip', 'device_type', 'email']:
+            if key not in update_data:
+                update_data[key] = None
 
         # CRITICAL: DO NOT TOUCH active_status in this route!
         # Note: active_status is intentionally excluded — admin setting is preserved forever
@@ -1279,7 +1281,7 @@ def send_message_page():
         active_devices_result = execute_query("""
             SELECT employee_id 
             FROM employee_devices 
-            WHERE status = 1
+            WHERE active_status = 1
         """, fetch=True)
 
         active_employee_ids = [
@@ -1548,8 +1550,8 @@ def monitor_devices():
 
 
         # Split devices
-        active_devices = [d for d in processed_devices if d['status']]
-        inactive_devices = [d for d in processed_devices if not d['status']]
+        active_devices = [d for d in processed_devices if d['active_status']]
+        inactive_devices = [d for d in processed_devices if not d['active_status']]
       
 
 
@@ -1761,6 +1763,8 @@ def update_bulk_device_status():
             employee_id = update.get('employee_id')
             
             active_status = update.get('active_status')
+            if active_status is None:
+                active_status = update.get('status')
             logging.debug(f"Processing update for employee_id: {employee_id}, active_status: {active_status}")
             if not employee_id or active_status is None:
                 logging.error(f"Missing required fields for employee_id: {employee_id}")
@@ -1813,7 +1817,7 @@ def update_bulk_device_status():
             device_data = {
                 "employee_id": employee_id,
                 "status": status,  # NOT NULL
-                "active_status": active_status,  # NOT NULL
+                "active_status": 1 if active_status in [True, 1, '1', 'true'] else 0,  # NOT NULL
                 "hostname": hostname,  # NOT NULL, guaranteed string
                 "email": email,  # NOT NULL, from employees
                 "last_seen": datetime.now(timezone.utc).isoformat(),  # NOT NULL
@@ -2266,10 +2270,12 @@ def update_device_status():
         data = request.json
         logging.debug(f"Received update_device_status data: {data}")
         employee_id = data.get('employee_id')
-        active_status = data.get('status')
+        active_status = data.get('active_status')
+        if active_status is None:
+            active_status = data.get('status')
        
         if not employee_id or active_status is None:
-            logging.error("Missing required fields in update_device_status: employee_id, active_status, or status")
+            logging.error("Missing required fields in update_device_status: employee_id, active_status")
             return jsonify({"message": "Missing required fields"}), 400
         
         # Step 1: Fetch employee email (required for NOT NULL)
@@ -2314,10 +2320,14 @@ def update_device_status():
 
 
         # Step 3: Build device_data with client overrides + ALL required fields
+        passed_status = data.get('status')
+        if isinstance(passed_status, str):
+            status = passed_status
+
         device_data = {
             "employee_id": employee_id,
-            "status": data.get('status', status),  # Allow client override
-            "active_status": active_status,
+            "status": status,
+            "active_status": 1 if active_status in [True, 1, '1', 'true'] else 0,
             "hostname": data.get('hostname', hostname),  # Client override + fallback
             "email": data.get('email', email),  # Client override + from employees
             "last_seen": datetime.now(timezone.utc).isoformat(),
