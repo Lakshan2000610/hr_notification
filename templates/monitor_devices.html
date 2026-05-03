@@ -60,11 +60,8 @@
     .card-header {
         background-color: white;
         border-bottom: 1px solid var(--card-border);
-        padding: 1.5rem;
+        padding: 1rem 1.5rem;
         border-radius: 12px 12px 0 0 !important;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
     }
 
     .card-title {
@@ -109,6 +106,11 @@
         border-bottom: none;
     }
 
+    /* Hidden rows for filtering */
+    .search-hidden {
+        display: none !important;
+    }
+
     /* Status Badges */
     .status-badge {
         padding: 0.35em 0.8em;
@@ -130,6 +132,11 @@
     .badge-soft-danger {
         background-color: rgba(220, 53, 69, 0.1);
         color: #dc3545;
+    }
+
+    .badge-soft-secondary {
+        background-color: #f1f3f5;
+        color: #495057;
     }
 
     /* Action Buttons */
@@ -214,11 +221,19 @@
 
     <!-- Inactive Devices Section -->
     <div class="card mb-5">
-        <div class="card-header">
-            <h5 class="card-title">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0" style="flex: 1;">
                 <i class="bi bi-hourglass-split text-warning"></i> Pending Approval
             </h5>
-            <div>
+            <div class="mx-3" style="flex: 1; max-width: 400px;">
+                <div class="input-group bg-white" style="border: 1px solid #ced4da; border-radius: 8px; overflow: hidden;">
+                    <span class="input-group-text bg-white border-0 ps-3">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" id="inactiveSearchInput" class="form-control border-0 py-1 ps-1 shadow-none" placeholder="Search by email or hostname...">
+                </div>
+            </div>
+            <div class="text-end" style="flex: 1;">
                 <button id="allActiveInactive" class="btn btn-sm btn-success shadow-sm">
                     <i class="bi bi-check2-all me-1"></i> Activate Selected
                 </button>
@@ -246,13 +261,13 @@
                         </td>
                         <td>
                             <div class="d-flex flex-column">
-                                <span class="fw-bold text-dark">{{ device.email | default('N/A') }}</span>
+                                <span class="fw-bold text-dark user-email">{{ device.email | default('N/A') }}</span>
                                 <span class="text-muted small" style="font-size: 0.75em;">ID: {{
                                     device.employee_id|truncate(8, True) }}</span>
                             </div>
                         </td>
                         <td><code
-                                class="text-primary bg-light px-2 py-1 rounded">{{ device.hostname | default('N/A') }}</code>
+                                class="text-primary bg-light px-2 py-1 rounded device-hostname">{{ device.hostname | default('N/A') }}</code>
                         </td>
                         <td>
                             <span class="status-badge badge-soft-{{ 'success' if (device.status == 'online' or device.status == 1 or device.status == True) else 'secondary' }}">
@@ -322,11 +337,19 @@
 
     <!-- Active Devices Section -->
     <div class="card">
-        <div class="card-header">
-            <h5 class="card-title text-success">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title text-success mb-0" style="flex: 1;">
                 <i class="bi bi-hdd-network"></i> Active Devices
             </h5>
-            <div>
+            <div class="mx-3" style="flex: 1; max-width: 400px;">
+                <div class="input-group bg-white" style="border: 1px solid #ced4da; border-radius: 8px; overflow: hidden;">
+                    <span class="input-group-text bg-white border-0 ps-3">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" id="activeSearchInput" class="form-control border-0 py-1 ps-1 shadow-none" placeholder="Search by email or hostname...">
+                </div>
+            </div>
+            <div class="text-end" style="flex: 1;">
                 <button id="allDeactiveActive" class="btn btn-sm btn-danger shadow-sm">
                     <i class="bi bi-ban me-1"></i> Deactivate Selected
                 </button>
@@ -354,11 +377,11 @@
                         </td>
                         <td>
                             <div class="d-flex flex-column">
-                                <span class="fw-bold text-dark">{{ device.email | default('N/A') }}</span>
+                                <span class="fw-bold text-dark user-email">{{ device.email | default('N/A') }}</span>
                             </div>
                         </td>
                         <td><code
-                                class="text-primary bg-light px-2 py-1 rounded">{{ device.hostname | default('N/A') }}</code>
+                                class="text-primary bg-light px-2 py-1 rounded device-hostname">{{ device.hostname | default('N/A') }}</code>
                         </td>
                         <td>
                             <span class="status-badge badge-soft-{{ 'success' if (device.status == 'online' or device.status == 1 or device.status == True) else 'secondary' }}">
@@ -421,14 +444,20 @@
 </div>
 
 <script>
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
+    // Initialize tooltips safely after page content has loaded
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof bootstrap !== 'undefined') {
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        } else {
+            console.warn('[Tooltips] bootstrap is not yet defined. Skipping tooltip initialization.');
+        }
     });
 
     // Data Handling & Pagination
-    const pageSize = 8;
+    const pageSize = 10;
     let pageState = {
         inactive: { page: 1, data: [] },
         active: { page: 1, data: [] }
@@ -443,27 +472,31 @@
     }
 
     function initTable(type) {
-        const state = pageState[type];
-        const table = document.getElementById(`${type}DeviceTable`);
-        const rows = table.querySelectorAll('tr'); // This assumes initial server render matches data
-
-        // If we are relying on client-side pagination of the server-rendered list, we need to hide rows initially.
-        // Better implementation: Just render everything and toggle visibility.
         renderPage(type);
     }
 
     function renderPage(type) {
         const state = pageState[type];
         const table = document.getElementById(`${type}DeviceTable`);
-        const rows = table.querySelectorAll('tr');
+        const rows = table.querySelectorAll('tr:not(.search-hidden)');
+        const allRows = table.querySelectorAll('tr');
+
+        // Hide rows first
+        allRows.forEach(row => {
+            if (row.classList.contains('search-hidden')) {
+                row.style.display = 'none';
+            }
+        });
 
         const totalItems = rows.length;
-        // Handle empty state row
         if (totalItems === 1 && rows[0].querySelector('.empty-state')) return;
 
         const totalPages = Math.ceil(totalItems / pageSize) || 1;
 
-        // Update controls
+        // Reset if we go out of bounds
+        if (state.page > totalPages) state.page = totalPages;
+        if (state.page < 1) state.page = 1;
+
         document.getElementById(`pageInfo${type.charAt(0).toUpperCase() + type.slice(1)}`).innerText = `Page ${state.page} of ${totalPages}`;
         document.getElementById(`prev${type.charAt(0).toUpperCase() + type.slice(1)}`).disabled = state.page === 1;
         document.getElementById(`next${type.charAt(0).toUpperCase() + type.slice(1)}`).disabled = state.page === totalPages;
@@ -478,7 +511,8 @@
 
     function changePage(type, delta) {
         const state = pageState[type];
-        const rows = document.getElementById(`${type}DeviceTable`).querySelectorAll('tr');
+        const table = document.getElementById(`${type}DeviceTable`);
+        const rows = table.querySelectorAll('tr:not(.search-hidden)');
         const totalItems = rows.length;
         if (totalItems === 1 && rows[0].querySelector('.empty-state')) return;
 
@@ -491,17 +525,72 @@
         }
     }
 
+    // Individual table search logic
+    document.getElementById('inactiveSearchInput')?.addEventListener('input', function(e) {
+        const term = e.target.value.toLowerCase().trim();
+        const table = document.getElementById('inactiveDeviceTable');
+        const rows = table.querySelectorAll('tr');
+        if (rows.length === 1 && rows[0].querySelector('.empty-state')) return;
+
+        rows.forEach(row => {
+            const emailSpan = row.querySelector('.user-email');
+            const hostnameCode = row.querySelector('.device-hostname');
+
+            const email = emailSpan ? emailSpan.innerText.toLowerCase() : '';
+            const hostname = hostnameCode ? hostnameCode.innerText.toLowerCase() : '';
+
+            if (email.includes(term) || hostname.includes(term) || term === '') {
+                row.classList.remove('search-hidden');
+            } else {
+                row.classList.add('search-hidden');
+            }
+        });
+
+        pageState.inactive.page = 1;
+        renderPage('inactive');
+    });
+
+    document.getElementById('activeSearchInput')?.addEventListener('input', function(e) {
+        const term = e.target.value.toLowerCase().trim();
+        const table = document.getElementById('activeDeviceTable');
+        const rows = table.querySelectorAll('tr');
+        if (rows.length === 1 && rows[0].querySelector('.empty-state')) return;
+
+        rows.forEach(row => {
+            const emailSpan = row.querySelector('.user-email');
+            const hostnameCode = row.querySelector('.device-hostname');
+
+            const email = emailSpan ? emailSpan.innerText.toLowerCase() : '';
+            const hostname = hostnameCode ? hostnameCode.innerText.toLowerCase() : '';
+
+            if (email.includes(term) || hostname.includes(term) || term === '') {
+                row.classList.remove('search-hidden');
+            } else {
+                row.classList.add('search-hidden');
+            }
+        });
+
+        pageState.active.page = 1;
+        renderPage('active');
+    });
+
     // Actions
     function toggleSelectAll(type) {
+        console.log(`[ToggleSelectAll] Called for type: ${type}`);
         const master = document.getElementById(`selectAll${type.charAt(0).toUpperCase() + type.slice(1)}`);
         const checkboxes = document.querySelectorAll(`#${type}DeviceTable input[type="checkbox"]`);
-        // Only verify visible or all? Usually all on current page or all dataset. 
-        // For simplicity, let's toggle CURRENT VISIBLE PAGE or ALL. The user expects ALL usually.
-        // Let's toggle all and ensure logic handles hidden inputs.
-        checkboxes.forEach(cb => cb.checked = master.checked);
+        console.log(`[ToggleSelectAll] Found ${checkboxes.length} checkboxes total`);
+        checkboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (row && !row.classList.contains('search-hidden')) {
+                cb.checked = master.checked;
+            }
+        });
+        console.log(`[ToggleSelectAll] All matching checkboxes set to checked = ${master.checked}`);
     }
 
     async function sendUpdate(payload, url = '/update_device_status') {
+        console.log(`[sendUpdate] Sending request to ${url}`, payload);
         try {
             const res = await fetch(url, {
                 method: 'POST',
@@ -509,43 +598,107 @@
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
+            console.log(`[sendUpdate] Response received: status=${res.status}`, data);
             if (res.ok) {
-                // Show toast or simple reload
-                location.reload();
+                Swal.fire({
+                    title: 'Success',
+                    text: 'Device updated successfully!',
+                    icon: 'success',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => {
+                    location.reload();
+                });
             } else {
-                alert(data.message || "Operation failed");
+                Swal.fire({
+                    title: 'Error',
+                    text: data.message || "Operation failed",
+                    icon: 'error'
+                });
             }
         } catch (e) {
-            console.error(e);
-            alert("Network error occurred");
+            console.error('[sendUpdate] Request failed error:', e);
+            Swal.fire({
+                title: 'Error',
+                text: "Network error occurred",
+                icon: 'error'
+            });
         }
     }
 
     function updateDeviceStatus(employeeId, status) {
-        sendUpdate({ employee_id: employeeId, status: status });
+        console.log(`[updateDeviceStatus] Action click for employeeId: ${employeeId}, status: ${status}`);
+        sendUpdate({ employee_id: employeeId, status: status, active_status: status });
     }
 
     // Bulk Actions
-    const bulkHandler = (type, status) => {
-        const checked = document.querySelectorAll(`#${type}DeviceTable input[type="checkbox"]:checked`);
-        if (checked.length === 0) return;
+    const bulkHandler = async (type, status) => {
+        console.log(`[bulkHandler] Starting bulk action for type: ${type}, status: ${status}`);
+        const checkboxes = document.querySelectorAll(`#${type}DeviceTable input[type="checkbox"]`);
+        const checked = [];
+        checkboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (cb.checked && row && !row.classList.contains('search-hidden')) {
+                checked.push(cb);
+            }
+        });
 
-        if (!confirm(`Are you sure you want to ${status ? 'activate' : 'deactivate'} ${checked.length} devices?`)) return;
+        console.log(`[bulkHandler] Selected checkboxes to process: ${checked.length}`);
 
-        const updates = Array.from(checked).map(cb => ({
-            employee_id: cb.dataset.employeeId,
-            status: status
-        }));
+        if (checked.length === 0) {
+            Swal.fire({
+                title: 'No Selection',
+                text: 'Please select at least one row.',
+                icon: 'info'
+            });
+            return;
+        }
 
-        // We use a bulk endpoint if available, or just reuse the logic active on page
-        // The user's code previously called /update_bulk_device_status
-        fetch('/update_bulk_device_status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
-        }).then(res => {
-            if (res.ok) location.reload();
-            else alert('Bulk update failed');
+        Swal.fire({
+            title: 'Confirm Bulk Action',
+            text: `Are you sure you want to ${status ? 'activate' : 'deactivate'} ${checked.length} devices?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: status ? '#28a745' : '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: `Yes, ${status ? 'activate' : 'deactivate'}!`
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                console.log(`[bulkHandler] Constructing fetch promises for ${checked.length} items`);
+                const promises = Array.from(checked).map(cb => {
+                    const employeeId = cb.getAttribute('data-employee-id');
+                    const bodyPayload = { employee_id: employeeId, status: status, active_status: status };
+                    console.log(`[bulkHandler] Dispatching single update for employeeId: ${employeeId}`, bodyPayload);
+                    return fetch('/update_device_status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bodyPayload)
+                    });
+                });
+
+                try {
+                    console.log(`[bulkHandler] Sending Promise.all for ${promises.length} requests`);
+                    await Promise.all(promises);
+                    console.log(`[bulkHandler] All requests completed successfully, reloading page...`);
+                    
+                    Swal.fire({
+                        title: 'Success',
+                        text: `${checked.length} devices updated successfully!`,
+                        icon: 'success',
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => {
+                        location.reload();
+                    });
+                } catch (e) {
+                    console.error('[bulkHandler] Failed during bulk update:', e);
+                    Swal.fire({
+                        title: 'Error',
+                        text: 'Bulk update failed.',
+                        icon: 'error'
+                    });
+                }
+            }
         });
     };
 
