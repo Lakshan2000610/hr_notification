@@ -1336,7 +1336,7 @@ def send_message_page():
         departments = sorted(departments)
 
         # Get available groups
-        groups_res = execute_query("SELECT id, name FROM groups ORDER BY name", fetch=True)
+        groups_res = execute_query("SELECT id, name FROM groups_name ORDER BY name", fetch=True)
         groups = groups_res.get("data", []) or []
 
         return render_template('send_message.html', 
@@ -2511,7 +2511,7 @@ def manage_groups():
         else:
             group_id = str(uuid.uuid4())
             try:
-                execute_query("INSERT INTO groups (id, name, description) VALUES (%s, %s, %s)", 
+                execute_query("INSERT INTO groups_name (id, name, description) VALUES (%s, %s, %s)", 
                               (group_id, name, description), commit=True)
                 flash(f"Group '{name}' created successfully!", "success")
             except Exception as e:
@@ -2520,7 +2520,7 @@ def manage_groups():
         return redirect(url_for('manage_groups'))
 
     try:
-        groups_res = execute_query("SELECT * FROM groups ORDER BY created_at DESC", fetch=True)
+        groups_res = execute_query("SELECT * FROM groups_name ORDER BY created_at DESC", fetch=True)
         groups = groups_res.get("data", []) or []
         
         # Get member counts for each group
@@ -2538,7 +2538,7 @@ def manage_groups():
 @admin_required
 def delete_group(group_id):
     try:
-        execute_query("DELETE FROM groups WHERE id = %s", (group_id,), commit=True)
+        execute_query("DELETE FROM groups_name WHERE id = %s", (group_id,), commit=True)
         flash("Group deleted successfully!", "success")
     except Exception as e:
         logging.error(f"Error deleting group: {e}")
@@ -2550,7 +2550,7 @@ def delete_group(group_id):
 @admin_required
 def edit_group(group_id):
     try:
-        group_res = execute_query("SELECT * FROM groups WHERE id = %s", (group_id,), fetch=True)
+        group_res = execute_query("SELECT * FROM groups_name WHERE id = %s", (group_id,), fetch=True)
         group_data = group_res.get("data")
         if not group_data:
             flash("Group not found.", "danger")
